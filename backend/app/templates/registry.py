@@ -103,6 +103,18 @@ SUPPORTED_TEMPLATES: Dict[str, TemplateMetadata] = {
                     cta_safe_slot=SlotBounds(x=0.06, y=0.75, width=0.28, height=0.12),
                     logo_safe_slot=SlotBounds(x=0.06, y=0.08, width=0.15, height=0.08),
                 ),
+                "4:5": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.48, y=0.18, width=0.46, height=0.68),
+                    text_safe_slot=SlotBounds(x=0.08, y=0.18, width=0.38, height=0.48),
+                    cta_safe_slot=SlotBounds(x=0.08, y=0.72, width=0.35, height=0.10),
+                    logo_safe_slot=SlotBounds(x=0.08, y=0.06, width=0.22, height=0.06),
+                ),
+                "1.91:1": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.55, y=0.10, width=0.40, height=0.80),
+                    text_safe_slot=SlotBounds(x=0.06, y=0.18, width=0.45, height=0.54),
+                    cta_safe_slot=SlotBounds(x=0.06, y=0.76, width=0.26, height=0.14),
+                    logo_safe_slot=SlotBounds(x=0.06, y=0.06, width=0.16, height=0.08),
+                ),
             }
         ),
     ),
@@ -134,6 +146,18 @@ SUPPORTED_TEMPLATES: Dict[str, TemplateMetadata] = {
                     cta_safe_slot=SlotBounds(x=0.06, y=0.76, width=0.26, height=0.12),
                     logo_safe_slot=SlotBounds(x=0.06, y=0.08, width=0.15, height=0.08),
                 ),
+                "4:5": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.16, y=0.36, width=0.68, height=0.44),
+                    text_safe_slot=SlotBounds(x=0.08, y=0.12, width=0.84, height=0.22),
+                    cta_safe_slot=SlotBounds(x=0.28, y=0.84, width=0.44, height=0.09),
+                    logo_safe_slot=SlotBounds(x=0.38, y=0.05, width=0.24, height=0.05),
+                ),
+                "1.91:1": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.52, y=0.12, width=0.42, height=0.76),
+                    text_safe_slot=SlotBounds(x=0.06, y=0.18, width=0.44, height=0.54),
+                    cta_safe_slot=SlotBounds(x=0.06, y=0.76, width=0.26, height=0.14),
+                    logo_safe_slot=SlotBounds(x=0.06, y=0.06, width=0.16, height=0.08),
+                ),
             }
         ),
     ),
@@ -164,6 +188,18 @@ SUPPORTED_TEMPLATES: Dict[str, TemplateMetadata] = {
                     text_safe_slot=SlotBounds(x=0.06, y=0.20, width=0.44, height=0.52),
                     cta_safe_slot=SlotBounds(x=0.06, y=0.76, width=0.26, height=0.12),
                     logo_safe_slot=SlotBounds(x=0.06, y=0.08, width=0.15, height=0.08),
+                ),
+                "4:5": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.50, y=0.18, width=0.44, height=0.66),
+                    text_safe_slot=SlotBounds(x=0.08, y=0.18, width=0.38, height=0.50),
+                    cta_safe_slot=SlotBounds(x=0.08, y=0.74, width=0.32, height=0.10),
+                    logo_safe_slot=SlotBounds(x=0.08, y=0.06, width=0.20, height=0.06),
+                ),
+                "1.91:1": AspectRatioSlots(
+                    product_slot=SlotBounds(x=0.55, y=0.12, width=0.38, height=0.76),
+                    text_safe_slot=SlotBounds(x=0.06, y=0.18, width=0.45, height=0.54),
+                    cta_safe_slot=SlotBounds(x=0.06, y=0.76, width=0.26, height=0.14),
+                    logo_safe_slot=SlotBounds(x=0.06, y=0.06, width=0.15, height=0.08),
                 ),
             }
         ),

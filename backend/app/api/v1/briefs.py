@@ -77,6 +77,7 @@ async def create_and_validate_brief(
                 meta = asset_res.asset_metadata or {}
                 asset_record = AssetValidationRecord(
                     url=primary_url,
+                    storage_key=meta.get("storage_key"),
                     detected_mime=meta.get("detected_mime"),
                     width=meta.get("width"),
                     height=meta.get("height"),
@@ -88,6 +89,35 @@ async def create_and_validate_brief(
                     validation_report=asset_res.report.model_dump(mode="json"),
                 )
                 db.add(asset_record)
+
+        # Validate logo asset if provided in brand
+        brand_data = validated_dict.get("brand", {})
+        logo_url = brand_data.get("logo_url")
+        if logo_url:
+            stmt_logo = select(AssetValidationRecord).where(AssetValidationRecord.url == logo_url)
+            existing_logo = (await db.execute(stmt_logo)).scalars().first()
+            if not existing_logo:
+                logo_res = await asset_gate_service.validate_url_and_asset(
+                    url=logo_url,
+                    require_transparency=False,
+                    allow_local_demo=True,
+                )
+                if logo_res.is_valid:
+                    meta_l = logo_res.asset_metadata or {}
+                    logo_record = AssetValidationRecord(
+                        url=logo_url,
+                        storage_key=meta_l.get("storage_key"),
+                        detected_mime=meta_l.get("detected_mime"),
+                        width=meta_l.get("width"),
+                        height=meta_l.get("height"),
+                        aspect_ratio=meta_l.get("aspect_ratio"),
+                        has_alpha_channel=meta_l.get("has_alpha_channel", False),
+                        transparency_percent=meta_l.get("transparency_percent"),
+                        file_size_bytes=meta_l.get("file_size_bytes"),
+                        validation_status=logo_res.status.value,
+                        validation_report=logo_res.report.model_dump(mode="json"),
+                    )
+                    db.add(logo_record)
 
     # Persist validated brief
     product = validated_dict.get("product", {})
@@ -102,7 +132,7 @@ async def create_and_validate_brief(
         price=float(offer.get("price", 0.0)),
         currency=offer.get("currency", "USD"),
         platforms=campaign.get("platforms", []),
-        validation_status=brief_res.status.value,
+        validation_status="PASS" if brief_res.is_valid else brief_res.status.value,
         payload=validated_dict,
         validation_report=brief_res.report.model_dump(mode="json"),
     )

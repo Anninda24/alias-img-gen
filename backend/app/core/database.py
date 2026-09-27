@@ -5,6 +5,14 @@ from app.core.config import settings
 from app.core.logging import logger
 
 
+# -----------------------------------------------------------------------------
+# ARCHITECTURAL NOTE (PHASE 4.1 HARDENING):
+# SQLite, aiosqlite, and Base.metadata.create_all() are development/MVP
+# implementations intended for zero-setup local execution and offline testing.
+# Production deployment will migrate to managed PostgreSQL (e.g. Cloud SQL / RDS)
+# with Alembic migration scripts, connection pooling, and multi-region read replicas.
+# -----------------------------------------------------------------------------
+
 class Base(DeclarativeBase):
     pass
 
@@ -41,6 +49,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     logger.info("Initializing database schema...")
+    import app.models  # Ensure all SQLAlchemy models are registered
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database schema initialized successfully.")

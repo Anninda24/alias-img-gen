@@ -168,5 +168,190 @@ export async function getStrategyTemplates(): Promise<{ data?: any; error?: stri
   }
 }
 
+export async function generateBackground(params: {
+  strategy_id: string;
+  platform: string;
+  force_regenerate?: boolean;
+}): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to generate background';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Background generation request failed';
+    return { error: message };
+  }
+}
+
+export async function getBackground(id: string): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch background';
+    return { error: message };
+  }
+}
+
+export async function regenerateBackground(
+  id: string,
+  customFeedback?: string
+): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/${id}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ custom_feedback: customFeedback || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Targeted regeneration failed';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Regeneration request failed';
+    return { error: message };
+  }
+}
+
+export async function generateComposite(params: {
+  background_id: string;
+  placement?: any;
+  shadow?: any;
+  force_regenerate?: boolean;
+}): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/composites/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to generate product composite';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Product compositing request failed';
+    return { error: message };
+  }
+}
+
+export async function getComposite(id: string): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/composites/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch composite';
+    return { error: message };
+  }
+}
+
+export async function regenerateComposite(
+  id: string,
+  params?: {
+    placement?: any;
+    shadow?: any;
+    custom_feedback?: string;
+  }
+): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/composites/${id}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Targeted recompositing failed';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Recompositing request failed';
+    return { error: message };
+  }
+}
+
+export async function generateFinalAd(params: {
+  composite_id: string;
+  typography?: any;
+  cta?: any;
+  price_badge?: any;
+  readability?: any;
+  force_regenerate?: boolean;
+}): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to render final advertisement';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Final advertisement rendering failed';
+    return { error: message };
+  }
+}
+
+export async function getFinalAd(id: string): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch final advertisement';
+    return { error: message };
+  }
+}
+
+export async function regenerateFinalAd(
+  id: string,
+  params?: {
+    typography?: any;
+    cta?: any;
+    price_badge?: any;
+    readability?: any;
+    custom_feedback?: string;
+  }
+): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/${id}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Targeted ad re-rendering failed';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Ad re-rendering request failed';
+    return { error: message };
+  }
+}
+
 export { API_BASE_URL };
 

@@ -146,4 +146,247 @@ export interface TemplateInfo {
   recommended_for_objectives: string[];
 }
 
+export type TargetPlatform = 'instagram' | 'facebook' | 'linkedin';
+
+export interface DiagnosticCheck {
+  passed: boolean;
+  score: number;
+  severity: 'PASS' | 'WARNING' | 'FAIL';
+  details: string;
+  metrics?: Record<string, any>;
+}
+
+export interface BackgroundQAResult {
+  status: 'PASS' | 'WARNING' | 'FAIL';
+  overall_score: number;
+  dimension_check: DiagnosticCheck;
+  text_artifact_check: DiagnosticCheck;
+  watermark_check: DiagnosticCheck;
+  extra_object_check: DiagnosticCheck;
+  negative_space_check: DiagnosticCheck;
+  product_safe_zone_check: DiagnosticCheck;
+  brightness_check: DiagnosticCheck;
+  issues: string[];
+  warnings: string[];
+  retry_guidance?: string;
+}
+
+export interface BackgroundResponse {
+  id: string;
+  job_id: string;
+  strategy_id: string;
+  platform: TargetPlatform;
+  width: number;
+  height: number;
+  aspect_ratio: string;
+  image_url: string;
+  qa_status: 'PASS' | 'WARNING' | 'FAIL';
+  qa_result: BackgroundQAResult;
+  attempt_number: number;
+  prompt: {
+    positive_prompt: string;
+    negative_prompt: string;
+    width: number;
+    height: number;
+    aspect_ratio: string;
+    platform: string;
+    template_id: string;
+    prompt_version: string;
+  };
+  provider: string;
+  model_name: string;
+  is_cached: boolean;
+  created_at: string;
+}
+
+export interface ProductPlacementConfig {
+  scale?: number;
+  alignment?: 'center' | 'bottom' | 'left' | 'right' | 'top';
+  padding_pct?: number;
+  offset_x?: number;
+  offset_y?: number;
+}
+
+export interface ShadowConfig {
+  enabled?: boolean;
+  opacity?: number;
+  blur_radius?: number;
+  offset_x?: number;
+  offset_y?: number;
+}
+
+export interface CompositeQAResult {
+  status: 'PASS' | 'WARNING' | 'FAIL';
+  overall_score: number;
+  dimension_check: DiagnosticCheck;
+  placement_check: DiagnosticCheck;
+  visibility_check: DiagnosticCheck;
+  boundary_check: DiagnosticCheck;
+  integrity_check: DiagnosticCheck;
+  issues: string[];
+  warnings: string[];
+  diagnostics?: Record<string, any>;
+}
+
+export interface CompositeResponse {
+  id: string;
+  job_id: string;
+  strategy_id: string;
+  brief_id?: string;
+  background_id: string;
+  platform: TargetPlatform;
+  width: number;
+  height: number;
+  aspect_ratio: string;
+  image_url: string;
+  cutout_url?: string;
+  placement_spec: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    normalized_slot: number[];
+  };
+  shadow_spec: ShadowConfig;
+  integrity_metadata: {
+    source_asset_id: string;
+    source_asset_hash: string;
+    cutout_hash: string;
+    background_id: string;
+    output_hash: string;
+    compositing_method: string;
+  };
+  qa_status: 'PASS' | 'WARNING' | 'FAIL';
+  qa_result: CompositeQAResult;
+  attempt_number: number;
+  is_cached: boolean;
+  created_at: string;
+}
+
+export interface GenerateCompositePayload {
+  background_id: string;
+  placement?: ProductPlacementConfig;
+  shadow?: ShadowConfig;
+  force_regenerate?: boolean;
+}
+
+export interface RegenerateCompositePayload {
+  placement?: ProductPlacementConfig;
+  shadow?: ShadowConfig;
+  custom_feedback?: string;
+}
+
+export interface TypographyStyle {
+  font_family: string;
+  headline_size: number;
+  headline_weight: 'regular' | 'bold';
+  subheadline_size: number;
+  subheadline_weight: 'regular' | 'bold';
+  headline_color: string;
+  subheadline_color: string;
+  line_height_multiplier: number;
+  alignment: 'left' | 'center' | 'right';
+}
+
+export interface CTAStyle {
+  enabled: boolean;
+  bg_color: string;
+  text_color: string;
+  border_radius: number;
+  font_size: number;
+  padding_x: number;
+  padding_y: number;
+}
+
+export interface PriceBadgeStyle {
+  enabled: boolean;
+  bg_color: string;
+  text_color: string;
+  border_radius: number;
+  font_size: number;
+}
+
+export interface ReadabilityEnhancementConfig {
+  auto_scrim: boolean;
+  scrim_opacity: number;
+}
+
+export interface FinalAdProvenance {
+  source_asset_id: string;
+  source_asset_hash: string;
+  cutout_hash: string;
+  background_id: string;
+  composite_id: string;
+  composite_output_hash: string;
+  copy_hash: string;
+  font_hashes: Record<string, string>;
+  output_hash: string;
+  renderer_version: string;
+}
+
+export interface FinalAdQAResult {
+  status: 'PASS' | 'WARNING' | 'FAIL';
+  overall_score: number;
+  dimension_check: DiagnosticCheck;
+  opacity_check: DiagnosticCheck;
+  text_safe_zone_check: DiagnosticCheck;
+  exact_copy_check: DiagnosticCheck;
+  cta_check: DiagnosticCheck;
+  product_occlusion_check: DiagnosticCheck;
+  contrast_check: DiagnosticCheck;
+  checks?: DiagnosticCheck[];
+  issues: string[];
+  warnings: string[];
+  diagnostics?: Record<string, any>;
+}
+
+export interface FinalAdResponse {
+  id: string;
+  job_id: string;
+  strategy_id: string;
+  brief_id?: string;
+  composite_id: string;
+  background_id: string;
+  platform: TargetPlatform;
+  width: number;
+  height: number;
+  aspect_ratio: string;
+  image_url: string;
+  copy_spec: {
+    headline: string;
+    subheadline?: string;
+    cta_text: string;
+    price_text?: string;
+    offer_text?: string;
+    brand_name: string;
+  };
+  typography_spec: TypographyStyle;
+  cta_spec: CTAStyle;
+  logo_spec?: Record<string, any>;
+  price_badge_spec?: PriceBadgeStyle;
+  readability_spec: ReadabilityEnhancementConfig;
+  provenance_chain: FinalAdProvenance;
+  qa_status: 'PASS' | 'WARNING' | 'FAIL';
+  qa_result: FinalAdQAResult;
+  attempt_number: number;
+  is_cached: boolean;
+  created_at: string;
+}
+
+export interface GenerateFinalAdPayload {
+  composite_id: string;
+  typography?: Partial<TypographyStyle>;
+  cta?: Partial<CTAStyle>;
+  price_badge?: Partial<PriceBadgeStyle>;
+  readability?: Partial<ReadabilityEnhancementConfig>;
+  force_regenerate?: boolean;
+}
+
+export interface RegenerateFinalAdPayload {
+  typography?: Partial<TypographyStyle>;
+  cta?: Partial<CTAStyle>;
+  price_badge?: Partial<PriceBadgeStyle>;
+  readability?: Partial<ReadabilityEnhancementConfig>;
+  custom_feedback?: string;
+}
 

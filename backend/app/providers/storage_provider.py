@@ -6,6 +6,14 @@ from app.core.logging import logger
 from app.providers.base import StorageProvider
 
 
+# -----------------------------------------------------------------------------
+# ARCHITECTURAL NOTE (PHASE 4.1 HARDENING):
+# LocalStorageProvider is a dev/MVP implementation for deterministic offline
+# testing and filesystem isolation. Production deployment will require managed
+# object storage (Amazon S3, Google Cloud Storage, or Cloudflare R2) with CDN
+# distribution, signed URLs, and lifecycle management.
+# -----------------------------------------------------------------------------
+
 class LocalStorageProvider(StorageProvider):
     """
     Local filesystem storage provider for frictionless offline development.

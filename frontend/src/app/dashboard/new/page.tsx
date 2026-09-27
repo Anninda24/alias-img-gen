@@ -8,12 +8,17 @@ import { Header } from '../../../components/Header';
 import { BriefForm } from '../../../components/brief/BriefForm';
 import { ValidationFeedbackPanel } from '../../../components/brief/ValidationFeedbackPanel';
 import { StrategyPreviewPanel } from '../../../components/strategy/StrategyPreviewPanel';
+import { BackgroundPreviewPanel } from '../../../components/background/BackgroundPreviewPanel';
+import { CompositePreviewPanel } from '../../../components/composite/CompositePreviewPanel';
+import { FinalAdPreviewPanel } from '../../../components/final_ad/FinalAdPreviewPanel';
 import { fetchHealth } from '../../../lib/api';
 import {
   SystemHealthResponse,
   ValidationReport,
   AssetValidationResponse,
   StrategyGenerationResponse,
+  BackgroundResponse,
+  CompositeResponse,
 } from '../../../lib/types';
 
 export default function NewBriefPage() {
@@ -26,6 +31,8 @@ export default function NewBriefPage() {
   const [briefPayload, setBriefPayload] = useState<any>(null);
   const [savedBriefId, setSavedBriefId] = useState<string | undefined>(undefined);
   const [strategyResponse, setStrategyResponse] = useState<StrategyGenerationResponse | null>(null);
+  const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(null);
+  const [compositeData, setCompositeData] = useState<CompositeResponse | null>(null);
 
   // Validation Results State
   const [briefReport, setBriefReport] = useState<ValidationReport | null>(null);
@@ -83,14 +90,14 @@ export default function NewBriefPage() {
               <div>
                 <h1 className="text-xl font-bold text-white tracking-tight">Campaign Studio</h1>
                 <p className="text-xs text-slate-400">
-                  Step 1: Ad Brief Ingestion & Gate &nbsp;→&nbsp; Step 2: Creative Strategy & Claim Gate
+                  Step 1: Brief & Gates &nbsp;→&nbsp; Step 2: Strategy & Claims &nbsp;→&nbsp; Step 3: Platform Spec & AI Background &nbsp;→&nbsp; Step 4: Product Cutout & Compositing &nbsp;→&nbsp; Step 5: Final Ad
                 </p>
               </div>
             </div>
 
             <div className="hidden sm:flex items-center space-x-2 text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800">
-              <ShieldCheck className="h-4 w-4 text-indigo-400" />
-              <span>Phase 1-3 Hard Gates Active</span>
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <span>Phase 1-6 Hard Gates Active</span>
             </div>
           </div>
 
@@ -136,6 +143,51 @@ export default function NewBriefPage() {
               briefPayload={briefPayload}
               briefId={savedBriefId}
               onStrategyGenerated={(res) => setStrategyResponse(res)}
+            />
+          </div>
+
+          {/* Step 3: Platform Creative Spec & Background Generation with Background QA */}
+          <div className="space-y-3 pt-6 border-t border-slate-800/80">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-mono">3</span>
+                Platform Creative Specs & AI Background Generation
+              </h2>
+            </div>
+            <BackgroundPreviewPanel
+              strategyId={strategyResponse?.strategy_id}
+              templateId={strategyResponse?.strategy?.template_id}
+              onBackgroundGenerated={(bg) => setBackgroundData(bg)}
+            />
+          </div>
+
+          {/* Step 4: Product Cutout Extraction & Deterministic Compositing */}
+          <div className="space-y-3 pt-6 border-t border-slate-800/80">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-mono">4</span>
+                Product Cutout Extraction & Deterministic Compositing
+              </h2>
+            </div>
+            <CompositePreviewPanel
+              backgroundId={backgroundData?.id}
+              platform={backgroundData?.platform || 'instagram'}
+              productAssetUrl={briefPayload?.product?.image_url}
+              onCompositeGenerated={(comp) => setCompositeData(comp)}
+            />
+          </div>
+
+          {/* Step 5: Deterministic Final Advertisement Rendering & QA */}
+          <div className="space-y-3 pt-6 border-t border-slate-800/80 pb-12">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-sky-900 text-sky-300 text-xs flex items-center justify-center font-mono">5</span>
+                Deterministic Final Advertisement Rendering & QA
+              </h2>
+            </div>
+            <FinalAdPreviewPanel
+              compositeId={compositeData?.id}
+              platform={compositeData?.platform || backgroundData?.platform || 'instagram'}
             />
           </div>
         </main>

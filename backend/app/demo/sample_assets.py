@@ -73,7 +73,7 @@ def generate_low_res_sample_png() -> bytes:
 SMARTFIT_X1_DEMO_BRIEF: Dict[str, Any] = {
     "brand": {
         "name": "SmartFit",
-        "logo_url": "https://assets.smartfit.io/demo/logo.png",
+        "logo_url": None,
         "colors": ["#2563EB", "#111827", "#10B981"],
         "font_family": "Inter",
     },

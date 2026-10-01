@@ -1,10 +1,11 @@
 import uuid
 from typing import Optional, Dict, Any
-from sqlalchemy import String, Integer, JSON, ForeignKey
+from sqlalchemy import String, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.base import TimestampMixin
+from app.models.base import TimestampMixin, CompatibleJSON
+from app.models.auth import DEFAULT_TENANT_ID
 
 
 class CreativeStrategyRecord(Base, TimestampMixin):
@@ -16,9 +17,16 @@ class CreativeStrategyRecord(Base, TimestampMixin):
         default=lambda: str(uuid.uuid4()),
         index=True,
     )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+        default=DEFAULT_TENANT_ID,
+    )
     brief_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("ad_briefs.id"),
+        ForeignKey("ad_briefs.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )
@@ -27,6 +35,6 @@ class CreativeStrategyRecord(Base, TimestampMixin):
     model_provider: Mapped[str] = mapped_column(String(50), default="mock", nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), default="mock-strategist-v1", nullable=False)
     template_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    strategy_spec: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
-    claim_validation_report: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    strategy_spec: Mapped[Dict[str, Any]] = mapped_column(CompatibleJSON, nullable=False)
+    claim_validation_report: Mapped[Dict[str, Any]] = mapped_column(CompatibleJSON, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

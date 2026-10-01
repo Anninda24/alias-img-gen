@@ -4,6 +4,7 @@ import {
   BriefValidationResponse,
   AssetValidationResponse,
 } from './types';
+import { getAuthHeaders } from './auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -52,7 +53,10 @@ export async function validateBrief(payload: unknown): Promise<{ data?: BriefVal
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/briefs/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(payload),
     });
     const data: BriefValidationResponse = await res.json();
@@ -70,7 +74,10 @@ export async function validateAssetUrl(
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/assets/validate-url`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({ url, require_transparency: requireTransparency }),
     });
     const data: AssetValidationResponse = await res.json();
@@ -83,7 +90,11 @@ export async function validateAssetUrl(
 
 export async function getDemoBrief(): Promise<{ data?: any; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/briefs/demo`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/briefs/demo`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { data };
@@ -97,13 +108,16 @@ export async function saveBrief(payload: unknown): Promise<{ data?: any; error?:
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/briefs`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) {
-      const msg = data.detail?.message || 'Failed to save brief';
-      return { error: msg, data };
+      const msg = data.detail?.message || data.detail || 'Failed to save brief';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
     }
     return { data };
   } catch (err: unknown) {
@@ -119,7 +133,10 @@ export async function generateStrategy(params: {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/strategies/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params),
     });
     const data = await res.json();
@@ -141,7 +158,10 @@ export async function validateStrategy(params: {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/strategies/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params),
     });
     const data = await res.json();
@@ -158,7 +178,11 @@ export async function validateStrategy(params: {
 
 export async function getStrategyTemplates(): Promise<{ data?: any; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/strategies/templates`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/strategies/templates`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { data };
@@ -176,7 +200,10 @@ export async function generateBackground(params: {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params),
     });
     const data = await res.json();
@@ -193,7 +220,11 @@ export async function generateBackground(params: {
 
 export async function getBackground(id: string): Promise<{ data?: any; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/${id}`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/${id}`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { data };
@@ -210,7 +241,10 @@ export async function regenerateBackground(
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/backgrounds/${id}/regenerate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({ custom_feedback: customFeedback || null }),
     });
     const data = await res.json();
@@ -234,7 +268,10 @@ export async function generateComposite(params: {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/composites/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params),
     });
     const data = await res.json();
@@ -251,7 +288,11 @@ export async function generateComposite(params: {
 
 export async function getComposite(id: string): Promise<{ data?: any; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/composites/${id}`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/composites/${id}`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { data };
@@ -272,7 +313,10 @@ export async function regenerateComposite(
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/composites/${id}/regenerate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params || {}),
     });
     const data = await res.json();
@@ -298,7 +342,10 @@ export async function generateFinalAd(params: {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params),
     });
     const data = await res.json();
@@ -315,7 +362,11 @@ export async function generateFinalAd(params: {
 
 export async function getFinalAd(id: string): Promise<{ data?: any; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/${id}`);
+    const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/${id}`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { data };
@@ -338,7 +389,10 @@ export async function regenerateFinalAd(
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/final-ads/${id}/regenerate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(params || {}),
     });
     const data = await res.json();
@@ -353,5 +407,46 @@ export async function regenerateFinalAd(
   }
 }
 
-export { API_BASE_URL };
+export async function getJobStatus(jobId: string): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/jobs/${jobId}`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch job status';
+    return { error: message };
+  }
+}
 
+export async function dispatchJobStage(
+  jobId: string,
+  stage: string,
+  params?: any
+): Promise<{ data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/jobs/${jobId}/dispatch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ stage, ...(params || {}) }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data.detail || 'Job dispatch failed';
+      return { error: typeof msg === 'string' ? msg : JSON.stringify(msg), data };
+    }
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Job dispatch request failed';
+    return { error: message };
+  }
+}
+
+export { API_BASE_URL };

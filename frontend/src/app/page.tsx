@@ -4,10 +4,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { HealthDashboard } from '../components/HealthDashboard';
+import { LoginView } from '../components/auth/LoginView';
 import { fetchHealth, fetchStatus } from '../lib/api';
 import { SystemHealthResponse, SystemStatusResponse } from '../lib/types';
+import { useAuth } from '../lib/AuthContext';
 
 export default function Home() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [health, setHealth] = useState<SystemHealthResponse | undefined>(undefined);
   const [status, setStatus] = useState<SystemStatusResponse | undefined>(undefined);
@@ -29,8 +32,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadSystemInfo();
-  }, [loadSystemInfo]);
+    if (isAuthenticated) {
+      loadSystemInfo();
+    }
+  }, [isAuthenticated, loadSystemInfo]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono text-xs">
+        Verifying tenant credentials...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">

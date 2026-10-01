@@ -11,7 +11,15 @@ import { StrategyPreviewPanel } from '../../../components/strategy/StrategyPrevi
 import { BackgroundPreviewPanel } from '../../../components/background/BackgroundPreviewPanel';
 import { CompositePreviewPanel } from '../../../components/composite/CompositePreviewPanel';
 import { FinalAdPreviewPanel } from '../../../components/final_ad/FinalAdPreviewPanel';
-import { fetchHealth } from '../../../lib/api';
+import { LoginView } from '../../../components/auth/LoginView';
+import {
+  fetchHealth,
+  generateStrategy,
+  generateBackground,
+  generateComposite,
+  generateFinalAd,
+} from '../../../lib/api';
+import { useAuth } from '../../../lib/AuthContext';
 import {
   SystemHealthResponse,
   ValidationReport,
@@ -19,9 +27,11 @@ import {
   StrategyGenerationResponse,
   BackgroundResponse,
   CompositeResponse,
+  FinalAdResponse,
 } from '../../../lib/types';
 
 export default function NewBriefPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('briefs');
   const [health, setHealth] = useState<SystemHealthResponse | undefined>(undefined);
   const [loadingHealth, setLoadingHealth] = useState(true);
@@ -33,10 +43,76 @@ export default function NewBriefPage() {
   const [strategyResponse, setStrategyResponse] = useState<StrategyGenerationResponse | null>(null);
   const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(null);
   const [compositeData, setCompositeData] = useState<CompositeResponse | null>(null);
+  const [finalAdData, setFinalAdData] = useState<FinalAdResponse | null>(null);
+
+  // Pipeline automated execution state
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineStep, setPipelineStep] = useState<string | null>(null);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
 
   // Validation Results State
   const [briefReport, setBriefReport] = useState<ValidationReport | null>(null);
   const [assetReport, setAssetReport] = useState<AssetValidationResponse | null>(null);
+
+  const runFullPipeline = async (targetBriefId: string) => {
+    if (!targetBriefId) return;
+    setPipelineRunning(true);
+    setPipelineError(null);
+    try {
+      // Step 2: Strategy
+      setPipelineStep('Generating Creative Strategy & verifying claims...');
+      const stratRes = await generateStrategy({ brief_id: targetBriefId });
+      if (stratRes.error || !stratRes.data) {
+        setPipelineError(stratRes.error || 'Failed to generate strategy');
+        return;
+      }
+      setStrategyResponse(stratRes.data);
+      const stratId = stratRes.data.strategy_id;
+
+      // Step 3: Background
+      setPipelineStep('Generating AI Platform Background (Instagram 4:5)...');
+      const bgRes = await generateBackground({ strategy_id: stratId, platform: 'instagram' });
+      if (bgRes.error || !bgRes.data) {
+        setPipelineError(bgRes.error || 'Failed to generate background');
+        return;
+      }
+      setBackgroundData(bgRes.data);
+      const bgId = bgRes.data.id;
+
+      // Step 4: Composite
+      setPipelineStep('Compositing Authentic Product Cutout onto Background...');
+      const compRes = await generateComposite({
+        background_id: bgId,
+        placement: { scale: 0.9, alignment: 'center' },
+        shadow: { enabled: true, opacity: 0.35 },
+      });
+      if (compRes.error || !compRes.data) {
+        setPipelineError(compRes.error || 'Failed to composite product');
+        return;
+      }
+      setCompositeData(compRes.data);
+      const compId = compRes.data.id;
+
+      // Step 5: Final Ad
+      setPipelineStep('Rendering Deterministic Typography, CTA & Scrim...');
+      const adRes = await generateFinalAd({
+        composite_id: compId,
+        typography: { font_family: 'Inter', headline_size: 52, headline_color: '#FFFFFF', alignment: 'left' },
+        cta: { bg_color: '#3B82F6', text_color: '#FFFFFF', border_radius: 10 },
+        readability: { auto_scrim: true },
+      });
+      if (adRes.error || !adRes.data) {
+        setPipelineError(adRes.error || 'Failed to render final ad');
+        return;
+      }
+      setFinalAdData(adRes.data);
+    } catch (err: any) {
+      setPipelineError(err.message || 'Pipeline execution failed');
+    } finally {
+      setPipelineRunning(false);
+      setPipelineStep(null);
+    }
+  };
 
   const loadHealth = useCallback(async () => {
     setLoadingHealth(true);
@@ -49,8 +125,10 @@ export default function NewBriefPage() {
   }, []);
 
   useEffect(() => {
-    loadHealth();
-  }, [loadHealth]);
+    if (isAuthenticated) {
+      loadHealth();
+    }
+  }, [isAuthenticated, loadHealth]);
 
   const handleValidationOutcome = (
     bReport: ValidationReport | null,
@@ -64,6 +142,18 @@ export default function NewBriefPage() {
     setBriefPayload(payload);
     if (briefId) setSavedBriefId(briefId);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono text-xs">
+        Verifying tenant credentials...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
@@ -95,11 +185,52 @@ export default function NewBriefPage() {
               </div>
             </div>
 
-            <div className="hidden sm:flex items-center space-x-2 text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
-              <span>Phase 1-6 Hard Gates Active</span>
+            <div className="flex items-center space-x-3">
+              {savedBriefId && (
+                <button
+                  type="button"
+                  onClick={() => runFullPipeline(savedBriefId)}
+                  disabled={pipelineRunning}
+                  className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 transition-all"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-200" />
+                  <span>{pipelineRunning ? 'Generating Pipeline...' : '⚡ Generate Full Pipeline'}</span>
+                </button>
+              )}
+              <div className="hidden sm:flex items-center space-x-2 text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                <span>Phase 1-6 Hard Gates Active</span>
+              </div>
             </div>
           </div>
+
+          {/* Automated Pipeline Progress Banner */}
+          {pipelineRunning && (
+            <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/40 flex items-center space-x-3 text-indigo-300 animate-pulse shadow-lg">
+              <div className="w-4 h-4 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin shrink-0" />
+              <div className="text-xs">
+                <span className="font-semibold text-white">Automated Pipeline In Progress: </span>
+                <span>{pipelineStep || 'Processing pipeline stages...'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Pipeline Error Banner */}
+          {pipelineError && (
+            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
+              <div>
+                <span className="font-semibold text-rose-200">Pipeline Error: </span>
+                {pipelineError}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPipelineError(null)}
+                className="text-xs underline text-rose-400 hover:text-rose-200 ml-4"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           {/* Step 1: Two-Column Responsive Grid (Brief Form + Gate Feedback) */}
           <div className="space-y-3">
@@ -117,6 +248,10 @@ export default function NewBriefPage() {
                   onPayloadChange={handlePayloadChange}
                   onSavedSuccess={(saved) => {
                     setSavedBriefId(saved.id);
+                  }}
+                  onLoadDemoAndRun={async (saved) => {
+                    setSavedBriefId(saved.id);
+                    await runFullPipeline(saved.id);
                   }}
                 />
               </div>
@@ -142,6 +277,7 @@ export default function NewBriefPage() {
             <StrategyPreviewPanel
               briefPayload={briefPayload}
               briefId={savedBriefId}
+              initialStrategy={strategyResponse}
               onStrategyGenerated={(res) => setStrategyResponse(res)}
             />
           </div>
@@ -157,6 +293,7 @@ export default function NewBriefPage() {
             <BackgroundPreviewPanel
               strategyId={strategyResponse?.strategy_id}
               templateId={strategyResponse?.strategy?.template_id}
+              initialBackground={backgroundData}
               onBackgroundGenerated={(bg) => setBackgroundData(bg)}
             />
           </div>
@@ -172,7 +309,8 @@ export default function NewBriefPage() {
             <CompositePreviewPanel
               backgroundId={backgroundData?.id}
               platform={backgroundData?.platform || 'instagram'}
-              productAssetUrl={briefPayload?.product?.image_url}
+              productAssetUrl={briefPayload?.images?.[0]?.url || briefPayload?.product?.image_url}
+              initialComposite={compositeData}
               onCompositeGenerated={(comp) => setCompositeData(comp)}
             />
           </div>
@@ -188,6 +326,8 @@ export default function NewBriefPage() {
             <FinalAdPreviewPanel
               compositeId={compositeData?.id}
               platform={compositeData?.platform || backgroundData?.platform || 'instagram'}
+              initialAdData={finalAdData}
+              onAdGenerated={(ad) => setFinalAdData(ad)}
             />
           </div>
         </main>

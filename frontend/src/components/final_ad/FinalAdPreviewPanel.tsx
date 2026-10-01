@@ -27,19 +27,30 @@ import {
   PriceBadgeStyle,
 } from '../../lib/types';
 import { generateFinalAd, regenerateFinalAd, API_BASE_URL } from '../../lib/api';
+import { getAuthSession } from '../../lib/auth';
 
 interface FinalAdPreviewPanelProps {
   compositeId?: string;
   platform?: string;
+  initialAdData?: FinalAdResponse | null;
+  onAdGenerated?: (ad: FinalAdResponse) => void;
 }
 
 export function FinalAdPreviewPanel({
   compositeId,
   platform = 'instagram',
+  initialAdData,
+  onAdGenerated,
 }: FinalAdPreviewPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adData, setAdData] = useState<FinalAdResponse | null>(null);
+  const [adData, setAdData] = useState<FinalAdResponse | null>(initialAdData || null);
+
+  React.useEffect(() => {
+    if (initialAdData !== undefined) {
+      setAdData(initialAdData);
+    }
+  }, [initialAdData]);
 
   // Deterministic typography & layout controls
   const [fontFamily, setFontFamily] = useState<string>('Inter');
@@ -131,8 +142,13 @@ export function FinalAdPreviewPanel({
 
   const getFullImageUrl = (path?: string) => {
     if (!path) return '';
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    return `${API_BASE_URL}${path}`;
+    let url = path.startsWith('http://') || path.startsWith('https://') ? path : `${API_BASE_URL}${path}`;
+    const session = getAuthSession();
+    if (session?.access_token && url.includes('/storage/')) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}token=${encodeURIComponent(session.access_token)}`;
+    }
+    return url;
   };
 
   const renderStatusBadge = (status: 'PASS' | 'WARNING' | 'FAIL') => {

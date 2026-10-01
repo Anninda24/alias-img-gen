@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.core.database import get_db
+from app.core.auth import get_current_tenant
+from app.models.auth import Tenant
 from app.models.brief import AdBrief
 from app.models.asset import AssetValidationRecord
 from app.models.job import CreativeJob, JobStatus
@@ -79,11 +81,12 @@ async def validate_strategy_endpoint(req: ValidateStrategyRequest):
 @router.post("/generate", response_model=StrategyGenerationResponse)
 async def generate_creative_strategy(
     req: GenerateStrategyRequest,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Generates a structured Creative Strategy strictly from a persisted and validated Ad Brief:
-    1. Loads persisted AdBrief by brief_id (rejects raw payloads or missing IDs).
+    1. Loads persisted AdBrief by brief_id scoped to the authenticated tenant.
     2. Verifies AdBrief validation_status == 'PASS'.
     3. Verifies required product image asset exists.
     4. Verifies corresponding AssetValidationRecord exists with validation_status == 'PASS'.
@@ -92,8 +95,8 @@ async def generate_creative_strategy(
     7. Validates strategy against Claim Gate and Template Registry.
     8. Updates CreativeJob and persists non-orphan CreativeStrategyRecord.
     """
-    # 1. Load persisted AdBrief
-    stmt = select(AdBrief).where(AdBrief.id == req.brief_id)
+    # 1. Load persisted AdBrief scoped to current tenant
+    stmt = select(AdBrief).where(AdBrief.id == req.brief_id, AdBrief.tenant_id == tenant.id)
     result = await db.execute(stmt)
     ad_brief_record = result.scalar_one_or_none()
     if not ad_brief_record:
@@ -129,7 +132,10 @@ async def generate_creative_strategy(
     # 4. Verify corresponding AssetValidationRecord exists and passed
     stmt_asset = (
         select(AssetValidationRecord)
-        .where(AssetValidationRecord.url == primary_asset_url)
+        .where(
+            AssetValidationRecord.url == primary_asset_url,
+            (AssetValidationRecord.tenant_id == tenant.id) | (AssetValidationRecord.tenant_id == None),
+        )
         .order_by(desc(AssetValidationRecord.created_at))
     )
     asset_record = (await db.execute(stmt_asset)).scalars().first()
@@ -138,7 +144,7 @@ async def generate_creative_strategy(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Product asset '{primary_asset_url}' has not been validated by Asset Gate.",
         )
-    if asset_record.validation_status != "PASS":
+    if asset_record.validation_status not in ["PASS", "WARNING"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Product asset '{primary_asset_url}' failed Asset Gate validation (status: {asset_record.validation_status}).",
@@ -147,7 +153,10 @@ async def generate_creative_strategy(
     # 5. Connect or create authoritative CreativeJob
     creative_job: Optional[CreativeJob] = None
     if req.job_id:
-        stmt_job = select(CreativeJob).where(CreativeJob.id == req.job_id)
+        stmt_job = select(CreativeJob).where(
+            CreativeJob.id == req.job_id,
+            CreativeJob.tenant_id == tenant.id,
+        )
         creative_job = (await db.execute(stmt_job)).scalar_one_or_none()
         if not creative_job:
             raise HTTPException(
@@ -157,6 +166,7 @@ async def generate_creative_strategy(
         creative_job.brief_id = ad_brief_record.id
     else:
         creative_job = CreativeJob(
+            tenant_id=tenant.id,
             brief_id=ad_brief_record.id,
             status=JobStatus.ASSET_CHECK.value,
             current_stage="Asset Check Passed",
@@ -166,18 +176,18 @@ async def generate_creative_strategy(
         db.add(creative_job)
         await db.flush()
 
-    # Transition to STRATEGY_GENERATING
+    # Transition to STRATEGY_GENERATING via authoritative state machine
     try:
         creative_job.transition_to(
             JobStatus.STRATEGY_GENERATING,
             stage_name="Generating Creative Strategy",
             progress_pct=30,
         )
-    except ValueError:
-        # Fallback in case job was in an intermediate state
-        creative_job.status = JobStatus.STRATEGY_GENERATING.value
-        creative_job.current_stage = "Generating Creative Strategy"
-        creative_job.progress_pct = 30
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot generate strategy: invalid job transition ({str(e)})",
+        )
 
     # 6. Execute Strategy Pipeline with Claim Gate and contextual retries
     strat_status, spec, claim_report, retry_count = await strategy_service.generate_and_validate_strategy(
@@ -198,6 +208,7 @@ async def generate_creative_strategy(
 
         # Persist strategy record
         record = CreativeStrategyRecord(
+            tenant_id=tenant.id,
             brief_id=ad_brief_record.id,
             version_number=1,
             status=strat_status,
@@ -245,3 +256,35 @@ async def generate_creative_strategy(
         job_id=creative_job.id,
         created_at=created_at_str,
     )
+
+
+@router.get("/{strategy_id}")
+async def get_strategy(
+    strategy_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetches details of a creative strategy scoped to the authenticated tenant."""
+    stmt = select(CreativeStrategyRecord).where(
+        CreativeStrategyRecord.id == strategy_id,
+        CreativeStrategyRecord.tenant_id == tenant.id,
+    )
+    strategy = (await db.execute(stmt)).scalar_one_or_none()
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"CreativeStrategy with id '{strategy_id}' not found.",
+        )
+    return {
+        "id": strategy.id,
+        "tenant_id": strategy.tenant_id,
+        "brief_id": strategy.brief_id,
+        "version_number": strategy.version_number,
+        "status": strategy.status,
+        "template_id": strategy.template_id,
+        "strategy_spec": strategy.strategy_spec,
+        "claim_validation_report": strategy.claim_validation_report,
+        "retry_count": strategy.retry_count,
+        "created_at": strategy.created_at.isoformat() if strategy.created_at else None,
+    }
+

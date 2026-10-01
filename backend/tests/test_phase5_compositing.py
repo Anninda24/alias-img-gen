@@ -517,8 +517,8 @@ async def test_full_compositing_pipeline(test_db_session: AsyncSession, setup_pi
     assert record1.width == 1080
     assert record1.height == 1350
     assert record1.qa_status in ["PASS", "WARNING"]
-    assert record1.storage_key.startswith("composites/")
-    assert record1.cutout_storage_key.startswith("cutouts/")
+    assert "composites/" in record1.storage_key
+    assert "cutouts/" in record1.cutout_storage_key
     assert record1.integrity_metadata["source_asset_id"] == setup_pipeline["asset"].id
     assert record1.is_cached is False
 

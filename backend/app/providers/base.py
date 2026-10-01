@@ -28,6 +28,17 @@ class StorageProvider(ABC):
         """Checks if a given key exists in storage."""
         pass
 
+    @abstractmethod
+    async def delete(self, key: str) -> bool:
+        """Deletes an object by key. Returns True if deleted or already absent."""
+        pass
+
+    @abstractmethod
+    async def get_metadata(self, key: str) -> Dict[str, Any]:
+        """Retrieves object metadata (size_bytes, content_type, sha256, last_modified, etc.)."""
+        pass
+
+
 
 class LLMStrategyProvider(ABC):
     """

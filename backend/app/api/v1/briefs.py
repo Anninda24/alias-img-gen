@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.core.database import get_db
+from app.core.auth import get_current_tenant
+from app.models.auth import Tenant
 from app.models.brief import AdBrief
 from app.models.asset import AssetValidationRecord
 from app.schemas.validation import BriefValidationResponse, AssetValidationResponse
@@ -35,6 +37,7 @@ async def get_demo_brief():
 async def create_and_validate_brief(
     payload: Dict[str, Any],
     validate_asset_now: bool = True,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -76,6 +79,7 @@ async def create_and_validate_brief(
                 # Persist asset validation record
                 meta = asset_res.asset_metadata or {}
                 asset_record = AssetValidationRecord(
+                    tenant_id=tenant.id,
                     url=primary_url,
                     storage_key=meta.get("storage_key"),
                     detected_mime=meta.get("detected_mime"),
@@ -94,7 +98,10 @@ async def create_and_validate_brief(
         brand_data = validated_dict.get("brand", {})
         logo_url = brand_data.get("logo_url")
         if logo_url:
-            stmt_logo = select(AssetValidationRecord).where(AssetValidationRecord.url == logo_url)
+            stmt_logo = select(AssetValidationRecord).where(
+                AssetValidationRecord.url == logo_url,
+                (AssetValidationRecord.tenant_id == tenant.id) | (AssetValidationRecord.tenant_id == None),
+            )
             existing_logo = (await db.execute(stmt_logo)).scalars().first()
             if not existing_logo:
                 logo_res = await asset_gate_service.validate_url_and_asset(
@@ -105,6 +112,7 @@ async def create_and_validate_brief(
                 if logo_res.is_valid:
                     meta_l = logo_res.asset_metadata or {}
                     logo_record = AssetValidationRecord(
+                        tenant_id=tenant.id,
                         url=logo_url,
                         storage_key=meta_l.get("storage_key"),
                         detected_mime=meta_l.get("detected_mime"),
@@ -126,6 +134,7 @@ async def create_and_validate_brief(
     campaign = validated_dict.get("campaign", {})
 
     ad_brief = AdBrief(
+        tenant_id=tenant.id,
         brand_name=brand.get("name", "Unknown"),
         product_name=product.get("name", "Unknown"),
         campaign_name=campaign.get("name"),
@@ -142,6 +151,7 @@ async def create_and_validate_brief(
 
     return {
         "id": ad_brief.id,
+        "tenant_id": ad_brief.tenant_id,
         "validation_status": ad_brief.validation_status,
         "brand_name": ad_brief.brand_name,
         "product_name": ad_brief.product_name,
@@ -153,14 +163,24 @@ async def create_and_validate_brief(
 
 
 @router.get("")
-async def list_briefs(limit: int = 50, db: AsyncSession = Depends(get_db)):
-    """Lists saved ad briefs."""
-    stmt = select(AdBrief).order_by(desc(AdBrief.created_at)).limit(limit)
+async def list_briefs(
+    limit: int = 50,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lists saved ad briefs scoped to the authenticated tenant."""
+    stmt = (
+        select(AdBrief)
+        .where(AdBrief.tenant_id == tenant.id)
+        .order_by(desc(AdBrief.created_at))
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     briefs = result.scalars().all()
     return [
         {
             "id": b.id,
+            "tenant_id": b.tenant_id,
             "brand_name": b.brand_name,
             "product_name": b.product_name,
             "campaign_name": b.campaign_name,
@@ -175,9 +195,13 @@ async def list_briefs(limit: int = 50, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{brief_id}")
-async def get_brief(brief_id: str, db: AsyncSession = Depends(get_db)):
-    """Fetches details of a specific ad brief."""
-    stmt = select(AdBrief).where(AdBrief.id == brief_id)
+async def get_brief(
+    brief_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetches details of a specific ad brief scoped to the authenticated tenant."""
+    stmt = select(AdBrief).where(AdBrief.id == brief_id, AdBrief.tenant_id == tenant.id)
     result = await db.execute(stmt)
     brief = result.scalar_one_or_none()
     if not brief:

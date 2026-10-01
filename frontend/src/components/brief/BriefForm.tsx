@@ -30,12 +30,14 @@ interface BriefFormProps {
   ) => void;
   onSavedSuccess?: (savedData: any) => void;
   onPayloadChange?: (payload: any, briefId?: string) => void;
+  onLoadDemoAndRun?: (savedData: any) => Promise<void> | void;
 }
 
 export const BriefForm: React.FC<BriefFormProps> = ({
   onValidated,
   onSavedSuccess,
   onPayloadChange,
+  onLoadDemoAndRun,
 }) => {
 
   // Form State
@@ -57,7 +59,7 @@ export const BriefForm: React.FC<BriefFormProps> = ({
 
   // Brand State
   const [brandName, setBrandName] = useState('SmartFit');
-  const [logoUrl, setLogoUrl] = useState('https://assets.smartfit.io/demo/logo.png');
+  const [logoUrl, setLogoUrl] = useState('');
   const [colors, setColors] = useState<string[]>(['#2563EB', '#111827', '#10B981']);
   const [newColor, setNewColor] = useState('#3B82F6');
   const [fontFamily, setFontFamily] = useState('Inter');
@@ -213,6 +215,21 @@ export const BriefForm: React.FC<BriefFormProps> = ({
       setSubheadline(data.copy?.subheadline || '');
       if (onPayloadChange) {
         onPayloadChange(data);
+      }
+
+      // Automatically validate & save demo brief to backend so downstream steps are unlocked
+      const saveRes = await saveBrief(data);
+      if (saveRes.data && !saveRes.error) {
+        setSaveSuccessMsg(`SmartFit X1 Demo loaded & saved! (ID: ${saveRes.data.id})`);
+        onValidated(
+          saveRes.data.brief_report,
+          saveRes.data.asset_report ? { is_valid: true, status: 'PASS', report: saveRes.data.asset_report } : null
+        );
+        if (onPayloadChange) onPayloadChange(data, saveRes.data.id);
+        if (onSavedSuccess) onSavedSuccess(saveRes.data);
+        if (onLoadDemoAndRun) {
+          await onLoadDemoAndRun(saveRes.data);
+        }
       }
     }
     setLoadingDemo(false);

@@ -5,30 +5,33 @@ from app.core.config import settings
 from app.core.logging import logger
 
 
-# -----------------------------------------------------------------------------
-# ARCHITECTURAL NOTE (PHASE 4.1 HARDENING):
-# SQLite, aiosqlite, and Base.metadata.create_all() are development/MVP
-# implementations intended for zero-setup local execution and offline testing.
-# Production deployment will migrate to managed PostgreSQL (e.g. Cloud SQL / RDS)
-# with Alembic migration scripts, connection pooling, and multi-region read replicas.
-# -----------------------------------------------------------------------------
-
 class Base(DeclarativeBase):
     pass
 
 
-# Create async engine.
-# Note: SQLite async requires 'connect_args={"check_same_thread": False}'
-connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+# Configure async engine with dialect-specific connection pooling
+is_postgres = settings.DATABASE_URL.lower().startswith("postgresql")
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    connect_args=connect_args,
-    future=True,
-)
+if is_postgres:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_timeout=settings.DB_POOL_TIMEOUT,
+        pool_recycle=settings.DB_POOL_RECYCLE,
+        pool_pre_ping=settings.DB_POOL_PRE_PING,
+        future=True,
+    )
+else:
+    connect_args = {"check_same_thread": False} if settings.DATABASE_URL.lower().startswith("sqlite") else {}
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        connect_args=connect_args,
+        pool_pre_ping=settings.DB_POOL_PRE_PING,
+        future=True,
+    )
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -40,16 +43,37 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency yielding an async database session.
+    Guarantees explicit rollback on any unhandled exception before closing.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()
 
 
 async def init_db() -> None:
-    logger.info("Initializing database schema...")
+    """
+    Initialize database schema.
+    In production: Base.metadata.create_all() is strictly disabled. Alembic migrations
+    are authoritative for production PostgreSQL persistence.
+    In development/testing: create_all() runs for frictionless local execution.
+    """
+    if settings.ENVIRONMENT.lower() == "production":
+        logger.info(
+            "Production environment detected: Skipping Base.metadata.create_all(). "
+            "Alembic migrations are authoritative for production schema management."
+        )
+        return
+
+    logger.info("Initializing database schema via Base.metadata.create_all (development/testing)...")
     import app.models  # Ensure all SQLAlchemy models are registered
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database schema initialized successfully.")
+

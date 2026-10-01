@@ -22,23 +22,32 @@ import {
   DiagnosticCheck,
 } from '../../lib/types';
 import { generateBackground, regenerateBackground, API_BASE_URL } from '../../lib/api';
+import { getAuthSession } from '../../lib/auth';
 
 interface BackgroundPreviewPanelProps {
   strategyId?: string;
   templateId?: string;
   onBackgroundGenerated?: (bg: BackgroundResponse | null) => void;
+  initialBackground?: BackgroundResponse | null;
 }
 
 export function BackgroundPreviewPanel({
   strategyId,
   templateId,
   onBackgroundGenerated,
+  initialBackground,
 }: BackgroundPreviewPanelProps) {
   const [platform, setPlatform] = useState<TargetPlatform>('instagram');
   const [forceRegenerate, setForceRegenerate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(null);
+  const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(initialBackground || null);
+
+  React.useEffect(() => {
+    if (initialBackground !== undefined) {
+      setBackgroundData(initialBackground);
+    }
+  }, [initialBackground]);
 
   // Regeneration states
   const [customFeedback, setCustomFeedback] = useState('');
@@ -92,8 +101,14 @@ export function BackgroundPreviewPanel({
   };
 
   const getFullImageUrl = (path: string) => {
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    return `${API_BASE_URL}${path}`;
+    if (!path) return '';
+    let url = path.startsWith('http://') || path.startsWith('https://') ? path : `${API_BASE_URL}${path}`;
+    const session = getAuthSession();
+    if (session?.access_token && url.includes('/storage/')) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}token=${encodeURIComponent(session.access_token)}`;
+    }
+    return url;
   };
 
   const renderStatusBadge = (status: 'PASS' | 'WARNING' | 'FAIL') => {

@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import logger
+from app.core.auth import get_current_tenant
+from app.models.auth import Tenant
+from app.models.composite import CompositedCreativeRecord
 from app.models.final_ad import FinalRenderedCreativeRecord
 from app.schemas.background import QAStatus
 from app.schemas.final_ad import (
@@ -26,6 +30,7 @@ router = APIRouter(prefix="/final-ads", tags=["Phase 6: Deterministic Final Adve
 @router.post("/generate", response_model=FinalAdResponse, status_code=status.HTTP_200_OK)
 async def generate_final_ad(
     request: FinalAdGenerateRequest,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -34,6 +39,18 @@ async def generate_final_ad(
     Strictly enforces all preceding pipeline gates (Brief, Asset, Strategy, Background, Composite).
     """
     logger.info(f"Received final ad render request for composite: {request.composite_id}")
+
+    # Verify composite exists and belongs to the authenticated tenant
+    stmt_comp = select(CompositedCreativeRecord).where(
+        CompositedCreativeRecord.id == request.composite_id,
+        CompositedCreativeRecord.tenant_id == tenant.id,
+    )
+    comp = (await db.execute(stmt_comp)).scalar_one_or_none()
+    if not comp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"CompositedCreativeRecord with id '{request.composite_id}' not found.",
+        )
 
     record = await FinalAdService.render_final_ad(
         db=db,
@@ -78,10 +95,15 @@ async def generate_final_ad(
 @router.get("/{final_ad_id}", response_model=FinalAdResponse, status_code=status.HTTP_200_OK)
 async def get_final_ad(
     final_ad_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieves a persisted FinalRenderedCreativeRecord by ID."""
-    record = await db.get(FinalRenderedCreativeRecord, final_ad_id)
+    """Retrieves a persisted FinalRenderedCreativeRecord by ID scoped to the tenant."""
+    stmt = select(FinalRenderedCreativeRecord).where(
+        FinalRenderedCreativeRecord.id == final_ad_id,
+        FinalRenderedCreativeRecord.tenant_id == tenant.id,
+    )
+    record = (await db.execute(stmt)).scalar_one_or_none()
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -122,6 +144,7 @@ async def get_final_ad(
 async def regenerate_final_ad(
     final_ad_id: str,
     request: FinalAdRegenerateRequest,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -129,7 +152,11 @@ async def regenerate_final_ad(
     Re-renders typography, CTA, and badge elements with updated parameters.
     Bypasses cache and generates a new attempt.
     """
-    existing = await db.get(FinalRenderedCreativeRecord, final_ad_id)
+    stmt = select(FinalRenderedCreativeRecord).where(
+        FinalRenderedCreativeRecord.id == final_ad_id,
+        FinalRenderedCreativeRecord.tenant_id == tenant.id,
+    )
+    existing = (await db.execute(stmt)).scalar_one_or_none()
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

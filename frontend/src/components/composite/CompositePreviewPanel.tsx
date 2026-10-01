@@ -20,12 +20,14 @@ import {
   DiagnosticCheck,
 } from '../../lib/types';
 import { generateComposite, regenerateComposite, API_BASE_URL } from '../../lib/api';
+import { getAuthSession } from '../../lib/auth';
 
 interface CompositePreviewPanelProps {
   backgroundId?: string;
   platform?: string;
   productAssetUrl?: string;
   onCompositeGenerated?: (composite: CompositeResponse) => void;
+  initialComposite?: CompositeResponse | null;
 }
 
 export function CompositePreviewPanel({
@@ -33,10 +35,17 @@ export function CompositePreviewPanel({
   platform = 'instagram',
   productAssetUrl,
   onCompositeGenerated,
+  initialComposite,
 }: CompositePreviewPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [compositeData, setCompositeData] = useState<CompositeResponse | null>(null);
+  const [compositeData, setCompositeData] = useState<CompositeResponse | null>(initialComposite || null);
+
+  React.useEffect(() => {
+    if (initialComposite !== undefined) {
+      setCompositeData(initialComposite);
+    }
+  }, [initialComposite]);
 
   // Placement & Shadow controls
   const [scale, setScale] = useState<number>(0.90);
@@ -114,8 +123,13 @@ export function CompositePreviewPanel({
 
   const getFullImageUrl = (path?: string) => {
     if (!path) return '';
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-    return `${API_BASE_URL}${path}`;
+    let url = path.startsWith('http://') || path.startsWith('https://') ? path : `${API_BASE_URL}${path}`;
+    const session = getAuthSession();
+    if (session?.access_token && url.includes('/storage/')) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}token=${encodeURIComponent(session.access_token)}`;
+    }
+    return url;
   };
 
   const renderStatusBadge = (status: 'PASS' | 'WARNING' | 'FAIL') => {

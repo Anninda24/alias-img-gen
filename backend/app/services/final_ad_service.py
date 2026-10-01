@@ -121,12 +121,40 @@ class FinalAdService:
                 detail=f"Composite '{composite_id}' QA status is '{composite.qa_status}'. Only 'PASS' or 'WARNING' composites can proceed to final rendering.",
             )
 
+        # Validate referenced GeneratedBackgroundRecord and graph integrity
+        background = await db.get(GeneratedBackgroundRecord, composite.background_id)
+        if not background:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Referenced GeneratedBackgroundRecord '{composite.background_id}' not found.",
+            )
+        if composite.job_id != background.job_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Composite job_id '{composite.job_id}' does not match background job_id '{background.job_id}'. Cross-job resource access prohibited.",
+            )
+        if composite.strategy_id != background.strategy_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Composite strategy_id does not match background strategy_id. Relationship mismatch.",
+            )
+        if composite.brief_id != background.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Composite brief_id does not match background brief_id. Relationship mismatch.",
+            )
+
         # B. Strategy Gate
         strategy = await db.get(CreativeStrategyRecord, composite.strategy_id)
         if not strategy or strategy.status != "APPROVED":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Underlying CreativeStrategy is not approved. Pipeline gate compromised.",
+            )
+        if strategy.brief_id != composite.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Strategy brief_id '{strategy.brief_id}' does not match composite brief_id '{composite.brief_id}'. Relationship mismatch.",
             )
 
         # C. Brief Gate
@@ -142,19 +170,43 @@ class FinalAdService:
         if primary_url:
             stmt_asset = select(AssetValidationRecord).where(AssetValidationRecord.url == primary_url)
             asset_record = (await db.execute(stmt_asset)).scalars().first()
-            if not asset_record or asset_record.validation_status != "PASS":
+            if not asset_record or asset_record.validation_status not in ["PASS", "WARNING"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Underlying product asset failed Asset Gate. Pipeline gate compromised.",
                 )
 
-        # E. Job Resolution
+        # E. Authoritative CreativeJob Resolution
         stmt_job = select(CreativeJob).where(CreativeJob.id == composite.job_id)
         job = (await db.execute(stmt_job)).scalars().first()
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No CreativeJob found for composite '{composite_id}'.",
+                detail=f"No CreativeJob found with id '{composite.job_id}' for composite '{composite_id}'. Cross-job fallback prohibited.",
+            )
+
+        # Enforce Final Ad -> Job -> Brief -> Strategy -> Background -> Composite invariants
+        if job.brief_id != composite.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob brief_id '{job.brief_id}' does not match composite brief_id '{composite.brief_id}'. Relationship mismatch.",
+            )
+        if job.strategy_id != composite.strategy_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob strategy_id '{job.strategy_id}' does not match composite strategy_id '{composite.strategy_id}'. Relationship mismatch.",
+            )
+
+        # Enforce multi-tenant graph consistency
+        if (
+            (job.tenant_id and composite.tenant_id and job.tenant_id != composite.tenant_id)
+            or (strategy.tenant_id and composite.tenant_id and strategy.tenant_id != composite.tenant_id)
+            or (brief.tenant_id and composite.tenant_id and brief.tenant_id != composite.tenant_id)
+            or (job.tenant_id and strategy.tenant_id and job.tenant_id != strategy.tenant_id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cross-tenant resource graph detected. All pipeline resources must belong to the same tenant.",
             )
 
         # =============================================================
@@ -472,7 +524,8 @@ class FinalAdService:
         attempt_count = (await db.execute(stmt_count)).scalar() or 0
         attempt_number = attempt_count + 1
 
-        storage_key = f"final_ads/{job.id}/{composite.platform}/final_ad_attempt_{attempt_number}.png"
+        storage_prefix = f"tenants/{job.tenant_id}/" if getattr(job, "tenant_id", None) else ""
+        storage_key = f"{storage_prefix}final_ads/{job.id}/{composite.platform}/final_ad_attempt_{attempt_number}.png"
         await storage.save_bytes(final_png_bytes, storage_key, content_type="image/png")
 
         # Provenance metadata
@@ -509,6 +562,7 @@ class FinalAdService:
             typo_spec_dict["script_analysis"] = script_analysis
 
             record = FinalRenderedCreativeRecord(
+                tenant_id=job.tenant_id,
                 job_id=job.id,
                 strategy_id=strategy.id,
                 brief_id=brief.id,
@@ -558,6 +612,7 @@ class FinalAdService:
             typo_spec_dict["script_analysis"] = script_analysis
 
             failed_record = FinalRenderedCreativeRecord(
+                tenant_id=job.tenant_id,
                 job_id=job.id,
                 strategy_id=strategy.id,
                 brief_id=brief.id,

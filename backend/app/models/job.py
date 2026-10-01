@@ -1,10 +1,11 @@
-import uuid
 from enum import Enum
 from typing import Any, Dict, Optional, List
-from sqlalchemy import String, Integer, JSON, Text, ForeignKey
+import uuid
+from sqlalchemy import String, Integer, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
-from app.models.base import TimestampMixin
+from app.models.base import TimestampMixin, CompatibleJSON
+from app.models.auth import DEFAULT_TENANT_ID
 
 
 class JobStatus(str, Enum):
@@ -42,15 +43,15 @@ ALLOWED_TRANSITIONS: Dict[JobStatus, List[JobStatus]] = {
     JobStatus.ASSET_CHECK: [JobStatus.STRATEGY_GENERATING, JobStatus.STRATEGY_GENERATED, JobStatus.FAILED],
     JobStatus.STRATEGY_GENERATING: [JobStatus.STRATEGY_GENERATED, JobStatus.FAILED],
     JobStatus.STRATEGY_GENERATED: [JobStatus.STRATEGY_VALIDATED, JobStatus.FAILED],
-    JobStatus.STRATEGY_VALIDATED: [JobStatus.BACKGROUND_GENERATION, JobStatus.FAILED],
-    JobStatus.BACKGROUND_GENERATION: [JobStatus.BACKGROUND_QA, JobStatus.REGENERATING, JobStatus.COMPOSITING, JobStatus.FAILED],
-    JobStatus.BACKGROUND_QA: [JobStatus.BACKGROUND_APPROVED, JobStatus.REGENERATING, JobStatus.COMPOSITING, JobStatus.FAILED],
-    JobStatus.BACKGROUND_APPROVED: [JobStatus.PRODUCT_CUTOUT, JobStatus.COMPOSITING, JobStatus.REGENERATING, JobStatus.COMPLETED],
-    JobStatus.PRODUCT_CUTOUT: [JobStatus.PRODUCT_QA, JobStatus.COMPOSITING, JobStatus.FAILED],
+    JobStatus.STRATEGY_VALIDATED: [JobStatus.BACKGROUND_GENERATION, JobStatus.STRATEGY_GENERATING, JobStatus.FAILED],
+    JobStatus.BACKGROUND_GENERATION: [JobStatus.BACKGROUND_QA, JobStatus.REGENERATING, JobStatus.FAILED],
+    JobStatus.BACKGROUND_QA: [JobStatus.BACKGROUND_APPROVED, JobStatus.REGENERATING, JobStatus.FAILED],
+    JobStatus.BACKGROUND_APPROVED: [JobStatus.PRODUCT_CUTOUT, JobStatus.REGENERATING, JobStatus.FAILED],
+    JobStatus.PRODUCT_CUTOUT: [JobStatus.PRODUCT_QA, JobStatus.FAILED],
     JobStatus.PRODUCT_QA: [JobStatus.COMPOSITING, JobStatus.PRODUCT_CUTOUT, JobStatus.FAILED],
-    JobStatus.COMPOSITING: [JobStatus.COMPOSITE_QA, JobStatus.RENDERING, JobStatus.FINAL_RENDERING, JobStatus.FAILED],
-    JobStatus.COMPOSITE_QA: [JobStatus.COMPOSITE_APPROVED, JobStatus.COMPOSITING, JobStatus.FAILED],
-    JobStatus.COMPOSITE_APPROVED: [JobStatus.FINAL_RENDERING, JobStatus.RENDERING, JobStatus.COMPOSITING, JobStatus.PRODUCT_CUTOUT, JobStatus.COMPLETED],
+    JobStatus.COMPOSITING: [JobStatus.COMPOSITE_QA, JobStatus.FAILED],
+    JobStatus.COMPOSITE_QA: [JobStatus.COMPOSITE_APPROVED, JobStatus.FAILED],
+    JobStatus.COMPOSITE_APPROVED: [JobStatus.FINAL_RENDERING, JobStatus.PRODUCT_CUTOUT, JobStatus.FAILED],
     JobStatus.FINAL_RENDERING: [JobStatus.FINAL_QA, JobStatus.FAILED],
     JobStatus.FINAL_QA: [JobStatus.FINAL_AD_APPROVED, JobStatus.FINAL_RENDERING, JobStatus.FAILED],
     JobStatus.FINAL_AD_APPROVED: [JobStatus.FINAL_RENDERING, JobStatus.COMPLETED],
@@ -60,7 +61,7 @@ ALLOWED_TRANSITIONS: Dict[JobStatus, List[JobStatus]] = {
     JobStatus.REGENERATING: [JobStatus.STRATEGY_GENERATING, JobStatus.STRATEGY_GENERATED, JobStatus.BACKGROUND_GENERATION, JobStatus.FAILED],
     JobStatus.APPROVED: [JobStatus.COMPLETED],
     JobStatus.REJECTED: [JobStatus.REGENERATING, JobStatus.FAILED],
-    JobStatus.FAILED: [JobStatus.RECEIVED, JobStatus.STRATEGY_GENERATING, JobStatus.BACKGROUND_GENERATION, JobStatus.COMPOSITING],
+    JobStatus.FAILED: [JobStatus.RECEIVED, JobStatus.STRATEGY_GENERATING, JobStatus.BACKGROUND_GENERATION, JobStatus.PRODUCT_CUTOUT, JobStatus.FINAL_RENDERING],
     JobStatus.COMPLETED: [],
 }
 
@@ -74,15 +75,22 @@ class CreativeJob(Base, TimestampMixin):
         default=lambda: str(uuid.uuid4()),
         index=True,
     )
+    tenant_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+        default=DEFAULT_TENANT_ID,
+    )
     brief_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        ForeignKey("ad_briefs.id"),
+        ForeignKey("ad_briefs.id", ondelete="SET NULL"),
         index=True,
         nullable=True,
     )
     strategy_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        ForeignKey("creative_strategies.id"),
+        ForeignKey("creative_strategies.id", ondelete="SET NULL"),
         index=True,
         nullable=True,
     )
@@ -103,17 +111,18 @@ class CreativeJob(Base, TimestampMixin):
         nullable=False,
     )
     brief_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSON,
+        CompatibleJSON,
         nullable=True,
     )
     stage_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSON,
+        CompatibleJSON,
         nullable=True,
     )
     error_details: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSON,
+        CompatibleJSON,
         nullable=True,
     )
+
 
     def transition_to(
         self,

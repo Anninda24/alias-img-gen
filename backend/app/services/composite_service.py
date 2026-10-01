@@ -168,6 +168,18 @@ class CompositeService:
                 detail=f"CreativeStrategy '{strategy.id}' status is '{strategy.status}'. Only 'APPROVED' strategies can proceed to compositing.",
             )
 
+        # Enforce Background -> Strategy relationship
+        if background.strategy_id != strategy.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Background strategy_id '{background.strategy_id}' does not match strategy '{strategy.id}'. Relationship mismatch.",
+            )
+        if background.brief_id != strategy.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Background brief_id '{background.brief_id}' does not match strategy brief_id '{strategy.brief_id}'. Relationship mismatch.",
+            )
+
         # C. Brief Gate
         brief = await db.get(AdBrief, background.brief_id)
         if not brief or brief.validation_status != "PASS":
@@ -190,23 +202,44 @@ class CompositeService:
             .order_by(desc(AssetValidationRecord.created_at))
         )
         asset_record = (await db.execute(stmt_asset)).scalars().first()
-        if not asset_record or asset_record.validation_status != "PASS":
+        if not asset_record or asset_record.validation_status not in ["PASS", "WARNING"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The underlying product asset has not passed Asset Gate validation. Pipeline gate compromised.",
             )
 
-        # E. CreativeJob Resolution
+        # E. Authoritative CreativeJob Resolution (Strictly via background.job_id)
         stmt_job = select(CreativeJob).where(CreativeJob.id == background.job_id)
         job = (await db.execute(stmt_job)).scalars().first()
-        if not job:
-            stmt_fallback = select(CreativeJob).where(CreativeJob.brief_id == brief.id)
-            job = (await db.execute(stmt_fallback)).scalars().first()
 
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No CreativeJob found associated with background '{background_id}'.",
+                detail=f"Authoritative CreativeJob '{background.job_id}' referenced by background '{background_id}' not found. Cross-job fallback prohibited.",
+            )
+
+        # Enforce Composite -> Job -> Brief -> Strategy -> Background graph invariants
+        if job.brief_id != background.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob brief_id '{job.brief_id}' does not match background brief_id '{background.brief_id}'. Relationship mismatch.",
+            )
+        if job.strategy_id != background.strategy_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob strategy_id '{job.strategy_id}' does not match background strategy_id '{background.strategy_id}'. Relationship mismatch.",
+            )
+
+        # Enforce multi-tenant graph consistency
+        if (
+            (job.tenant_id and background.tenant_id and job.tenant_id != background.tenant_id)
+            or (strategy.tenant_id and background.tenant_id and strategy.tenant_id != background.tenant_id)
+            or (brief.tenant_id and background.tenant_id and brief.tenant_id != background.tenant_id)
+            or (job.tenant_id and strategy.tenant_id and job.tenant_id != strategy.tenant_id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cross-tenant resource graph detected. All pipeline resources must belong to the same tenant.",
             )
 
         # =============================================================
@@ -279,7 +312,8 @@ class CompositeService:
             )
 
         # Save cutout asset
-        cutout_storage_key = f"cutouts/{job.id}/product_cutout.png"
+        storage_prefix = f"tenants/{job.tenant_id}/" if getattr(job, "tenant_id", None) else ""
+        cutout_storage_key = f"{storage_prefix}cutouts/{job.id}/product_cutout.png"
         await storage.save_bytes(cutout_bytes, cutout_storage_key, content_type="image/png")
 
         # =============================================================
@@ -382,7 +416,8 @@ class CompositeService:
         attempt_count = (await db.execute(stmt_count)).scalar() or 0
         attempt_number = attempt_count + 1
 
-        storage_key = f"composites/{job.id}/{platform_spec.platform.value}/composite_attempt_{attempt_number}.png"
+        storage_prefix = f"tenants/{job.tenant_id}/" if getattr(job, "tenant_id", None) else ""
+        storage_key = f"{storage_prefix}composites/{job.id}/{platform_spec.platform.value}/composite_attempt_{attempt_number}.png"
         await storage.save_bytes(composited_bytes, storage_key, content_type="image/png")
 
         if composite_qa.status in (QAStatus.PASS, QAStatus.WARNING):
@@ -401,6 +436,7 @@ class CompositeService:
                 )
 
             record = CompositedCreativeRecord(
+                tenant_id=job.tenant_id,
                 job_id=job.id,
                 strategy_id=strategy.id,
                 brief_id=brief.id,
@@ -433,6 +469,7 @@ class CompositeService:
                 error_details={"issues": composite_qa.issues, "score": composite_qa.overall_score},
             )
             failed_record = CompositedCreativeRecord(
+                tenant_id=job.tenant_id,
                 job_id=job.id,
                 strategy_id=strategy.id,
                 brief_id=brief.id,
@@ -475,6 +512,14 @@ class CompositeService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"CompositedCreativeRecord '{composite_id}' not found.",
+            )
+
+        # Validate that old_record's background, job, strategy, and brief are mutually consistent
+        bg = await db.get(GeneratedBackgroundRecord, old_record.background_id)
+        if not bg or bg.job_id != old_record.job_id or bg.brief_id != old_record.brief_id or bg.strategy_id != old_record.strategy_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Composite record graph inconsistent with referenced background. Cross-job access prohibited.",
             )
 
         # Merge placement configs if provided

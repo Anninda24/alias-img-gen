@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import logger
+from app.core.auth import get_current_tenant
+from app.models.auth import Tenant
 from app.models.brief import AdBrief
 from app.models.asset import AssetValidationRecord
 from app.models.strategy import CreativeStrategyRecord
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/backgrounds", tags=["Phase 4: AI Background Generati
 @router.post("/generate", response_model=BackgroundResponse, status_code=status.HTTP_200_OK)
 async def generate_background(
     request: BackgroundGenerateRequest,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -35,8 +38,12 @@ async def generate_background(
     """
     logger.info(f"Received background generation request for strategy: {request.strategy_id}, platform: {request.platform.value}")
 
-    # 1. Verify Strategy Gate
-    strategy = await db.get(CreativeStrategyRecord, request.strategy_id)
+    # 1. Verify Strategy Gate scoped to authenticated tenant
+    stmt_strat = select(CreativeStrategyRecord).where(
+        CreativeStrategyRecord.id == request.strategy_id,
+        CreativeStrategyRecord.tenant_id == tenant.id,
+    )
+    strategy = (await db.execute(stmt_strat)).scalar_one_or_none()
     if not strategy:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -65,7 +72,7 @@ async def generate_background(
             .order_by(desc(AssetValidationRecord.created_at))
         )
         asset_record = (await db.execute(stmt_asset)).scalars().first()
-        if not asset_record or asset_record.validation_status != "PASS":
+        if not asset_record or asset_record.validation_status not in ["PASS", "WARNING"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The underlying product asset has not passed Asset Gate validation. Pipeline gate compromised.",
@@ -114,12 +121,17 @@ async def generate_background(
 @router.get("/{background_id}", response_model=BackgroundResponse, status_code=status.HTTP_200_OK)
 async def get_background(
     background_id: str,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Retrieves generated background metadata, storage URL, and QA diagnostics.
+    Retrieves generated background metadata, storage URL, and QA diagnostics scoped to the tenant.
     """
-    record = await db.get(GeneratedBackgroundRecord, background_id)
+    stmt = select(GeneratedBackgroundRecord).where(
+        GeneratedBackgroundRecord.id == background_id,
+        GeneratedBackgroundRecord.tenant_id == tenant.id,
+    )
+    record = (await db.execute(stmt)).scalar_one_or_none()
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -160,6 +172,7 @@ async def get_background(
 async def regenerate_background(
     background_id: str,
     request: BackgroundRegenerateRequest,
+    tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -167,6 +180,17 @@ async def regenerate_background(
     Preserves creative strategy and brief facts while tuning visual environment generation.
     """
     logger.info(f"Targeted regeneration requested for background record: {background_id}")
+    stmt = select(GeneratedBackgroundRecord).where(
+        GeneratedBackgroundRecord.id == background_id,
+        GeneratedBackgroundRecord.tenant_id == tenant.id,
+    )
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"GeneratedBackgroundRecord '{background_id}' not found.",
+        )
+
     new_record = await BackgroundService.regenerate_background(
         db=db,
         background_id=background_id,

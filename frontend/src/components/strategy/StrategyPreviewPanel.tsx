@@ -28,17 +28,25 @@ interface StrategyPreviewPanelProps {
   briefPayload: any;
   briefId?: string;
   onStrategyGenerated?: (response: StrategyGenerationResponse) => void;
+  initialStrategy?: StrategyGenerationResponse | null;
 }
 
 export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
   briefPayload,
   briefId,
   onStrategyGenerated,
+  initialStrategy,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [strategyResult, setStrategyResult] = useState<StrategyGenerationResponse | null>(null);
+  const [strategyResult, setStrategyResult] = useState<StrategyGenerationResponse | null>(initialStrategy || null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'strategy' | 'claims' | 'visuals'>('strategy');
+
+  React.useEffect(() => {
+    if (initialStrategy !== undefined) {
+      setStrategyResult(initialStrategy);
+    }
+  }, [initialStrategy]);
 
   const handleGenerate = async () => {
     if (!briefId) {

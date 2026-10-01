@@ -173,13 +173,13 @@ class BackgroundService:
                 .order_by(desc(AssetValidationRecord.created_at))
             )
             asset_record = (await db.execute(stmt_asset)).scalars().first()
-            if asset_record and asset_record.validation_status != "PASS":
+            if asset_record and asset_record.validation_status not in ["PASS", "WARNING"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="The underlying product asset has not passed Asset Gate validation. Pipeline gate compromised.",
                 )
 
-        # 4. Load associated CreativeJob
+        # 4. Load associated CreativeJob strictly by strategy_id
         stmt = select(CreativeJob).where(
             and_(
                 CreativeJob.strategy_id == strategy_id,
@@ -189,14 +189,32 @@ class BackgroundService:
         job = res.scalars().first()
 
         if not job:
-            stmt_brief = select(CreativeJob).where(CreativeJob.brief_id == strategy.brief_id)
-            res_brief = await db.execute(stmt_brief)
-            job = res_brief.scalars().first()
-
-        if not job:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No CreativeJob found associated with strategy '{strategy_id}' or brief '{strategy.brief_id}'.",
+                detail=f"No CreativeJob found associated with strategy '{strategy_id}'. Cross-job fallback prohibited.",
+            )
+
+        # Enforce graph consistency: Job -> Brief -> Strategy
+        if job.brief_id != strategy.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob brief_id '{job.brief_id}' does not match strategy brief_id '{strategy.brief_id}'. Relationship mismatch.",
+            )
+        if job.strategy_id != strategy.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CreativeJob strategy_id '{job.strategy_id}' does not match strategy id '{strategy.id}'. Relationship mismatch.",
+            )
+
+        # Enforce multi-tenant graph consistency
+        if (
+            (job.tenant_id and strategy.tenant_id and job.tenant_id != strategy.tenant_id)
+            or (brief.tenant_id and strategy.tenant_id and brief.tenant_id != strategy.tenant_id)
+            or (job.tenant_id and brief.tenant_id and job.tenant_id != brief.tenant_id)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cross-tenant resource graph detected. All pipeline resources must belong to the same tenant.",
             )
 
         # 5. Build Platform Creative Specification
@@ -245,25 +263,46 @@ class BackgroundService:
                 return cached_record
 
         # 7. Pipeline State Transition -> BACKGROUND_GENERATION
-        if job.status == JobStatus.STRATEGY_VALIDATED.value:
-            job.transition_to(
-                JobStatus.BACKGROUND_GENERATION,
-                stage_name="AI Background Generation",
-                progress_pct=50,
-                stage_data={
-                    "platform": platform_spec.platform.value,
-                    "target_dimensions": f"{platform_spec.target_width}x{platform_spec.target_height}",
-                },
+        try:
+            if job.status == JobStatus.STRATEGY_VALIDATED.value:
+                job.transition_to(
+                    JobStatus.BACKGROUND_GENERATION,
+                    stage_name="AI Background Generation",
+                    progress_pct=50,
+                    stage_data={
+                        "platform": platform_spec.platform.value,
+                        "target_dimensions": f"{platform_spec.target_width}x{platform_spec.target_height}",
+                    },
+                )
+            elif job.status == JobStatus.FAILED.value:
+                job.transition_to(
+                    JobStatus.BACKGROUND_GENERATION,
+                    stage_name="AI Background Generation (Retry)",
+                    progress_pct=50,
+                )
+            elif job.status in (JobStatus.BACKGROUND_QA.value, JobStatus.BACKGROUND_APPROVED.value):
+                job.transition_to(
+                    JobStatus.REGENERATING,
+                    stage_name="Background Re-generation",
+                    progress_pct=50,
+                )
+                job.transition_to(
+                    JobStatus.BACKGROUND_GENERATION,
+                    stage_name="AI Background Generation",
+                    progress_pct=50,
+                )
+            elif job.status != JobStatus.BACKGROUND_GENERATION.value:
+                job.transition_to(
+                    JobStatus.BACKGROUND_GENERATION,
+                    stage_name="AI Background Generation",
+                    progress_pct=50,
+                )
+            await db.commit()
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid job state transition for background generation: {str(e)}",
             )
-            await db.commit()
-        elif job.status in (JobStatus.BACKGROUND_QA.value, JobStatus.BACKGROUND_APPROVED.value, JobStatus.FAILED.value):
-            if job.status != JobStatus.REGENERATING.value:
-                try:
-                    job.transition_to(JobStatus.REGENERATING, stage_name="Background Re-generation", progress_pct=50)
-                except ValueError:
-                    job.status = JobStatus.BACKGROUND_GENERATION.value
-            job.transition_to(JobStatus.BACKGROUND_GENERATION, stage_name="AI Background Generation", progress_pct=50)
-            await db.commit()
 
         # 8. Targeted Generation Loop (up to max_attempts)
         last_retry_feedback: Optional[str] = None
@@ -331,7 +370,8 @@ class BackgroundService:
                 logger.info(f"Background QA {qa_result.status.value} on attempt {attempt} (score: {qa_result.overall_score:.2f})")
 
                 # Store image
-                storage_key = f"backgrounds/{job.id}/{platform_spec.platform.value}_attempt_{attempt}.png"
+                storage_prefix = f"tenants/{job.tenant_id}/" if getattr(job, "tenant_id", None) else ""
+                storage_key = f"{storage_prefix}backgrounds/{job.id}/{platform_spec.platform.value}_attempt_{attempt}.png"
                 await storage.save_bytes(image_bytes, storage_key, content_type="image/png")
 
                 # Compute attempt-specific cache key matching this successful attempt
@@ -367,6 +407,7 @@ class BackgroundService:
 
                 # Persist Record with Cache Key
                 record = GeneratedBackgroundRecord(
+                    tenant_id=job.tenant_id,
                     job_id=job.id,
                     strategy_id=strategy.id,
                     brief_id=strategy.brief_id,
@@ -400,7 +441,8 @@ class BackgroundService:
 
         # If all attempts exhausted: save audit record and mark job FAILED
         logger.error(f"Background generation QA failed after all {max_attempts} attempts.")
-        storage_key_failed = f"backgrounds/{job.id}/{platform_spec.platform.value}_failed_final.png"
+        storage_prefix = f"tenants/{job.tenant_id}/" if getattr(job, "tenant_id", None) else ""
+        storage_key_failed = f"{storage_prefix}backgrounds/{job.id}/{platform_spec.platform.value}_failed_final.png"
         if last_image_bytes:
             await storage.save_bytes(last_image_bytes, storage_key_failed, content_type="image/png")
 
@@ -416,6 +458,7 @@ class BackgroundService:
         )
 
         failed_record = GeneratedBackgroundRecord(
+            tenant_id=job.tenant_id,
             job_id=job.id,
             strategy_id=strategy.id,
             brief_id=strategy.brief_id,
@@ -458,6 +501,20 @@ class BackgroundService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"GeneratedBackgroundRecord '{background_id}' not found.",
+            )
+
+        # Enforce consistency of old_record graph
+        strategy = await db.get(CreativeStrategyRecord, old_record.strategy_id)
+        if not strategy or strategy.brief_id != old_record.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Background record brief_id does not match strategy brief_id. Relationship mismatch.",
+            )
+        job = await db.get(CreativeJob, old_record.job_id)
+        if not job or job.id != old_record.job_id or job.strategy_id != old_record.strategy_id or job.brief_id != old_record.brief_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Background record job graph inconsistent. Cross-job resource access prohibited.",
             )
 
         return await cls.generate_background(

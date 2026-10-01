@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     AUTH_JWKS_URL: Optional[str] = None
     AUTH_TOKEN_EXPIRE_MINUTES: int = 1440
 
+    # Vision QA configuration — expensive model; OFF by default, runs only on final render
+    # Set to True in staging/production to enable post-render vision verification.
+    ENABLE_VISION_QA: bool = False
+    # Provider class name: "mock" (default/dev) or "google_gemini" (production)
+    VISION_QA_PROVIDER: str = "mock"
+    # Maximum vision QA calls per pipeline run (cost guard)
+    VISION_QA_MAX_CALLS_PER_PIPELINE: int = 1
+
     @model_validator(mode="after")
     def validate_production_configuration(self) -> "Settings":
         """

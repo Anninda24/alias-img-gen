@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Sparkles, Layers, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Sparkles, Layers, ShieldCheck, Download, CheckCircle2 } from 'lucide-react';
 import { Sidebar } from '../../../components/Sidebar';
 import { Header } from '../../../components/Header';
 import { BriefForm } from '../../../components/brief/BriefForm';
@@ -12,8 +12,13 @@ import { BackgroundPreviewPanel } from '../../../components/background/Backgroun
 import { CompositePreviewPanel } from '../../../components/composite/CompositePreviewPanel';
 import { FinalAdPreviewPanel } from '../../../components/final_ad/FinalAdPreviewPanel';
 import { LoginView } from '../../../components/auth/LoginView';
+import { StudioHeader } from '../../../components/workspace/StudioHeader';
+import { ProductStagePanel } from '../../../components/workspace/ProductStagePanel';
+import { DependencyCard } from '../../../components/common/DependencyCard';
+import { TechnicalDrawer } from '../../../components/common/TechnicalDrawer';
 import {
   fetchHealth,
+  fetchSupportedPlatforms,
   generateStrategy,
   generateBackground,
   generateComposite,
@@ -28,6 +33,10 @@ import {
   BackgroundResponse,
   CompositeResponse,
   FinalAdResponse,
+  WorkflowStage,
+  StageStatusInfo,
+  TargetPlatform,
+  PlatformDefinition,
 } from '../../../lib/types';
 
 export default function NewBriefPage() {
@@ -36,6 +45,39 @@ export default function NewBriefPage() {
   const [health, setHealth] = useState<SystemHealthResponse | undefined>(undefined);
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
+
+  // Creative Studio Workspace Stage & Platform Navigation
+  const [activeStage, setActiveStage] = useState<WorkflowStage>('brief');
+  const [currentPlatform, setCurrentPlatform] = useState<TargetPlatform>('instagram');
+  const [availablePlatforms, setAvailablePlatforms] = useState<PlatformDefinition[]>([
+    {
+      platform: 'instagram',
+      name: 'Instagram (4:5)',
+      target_width: 1080,
+      target_height: 1350,
+      aspect_ratio: '4:5',
+      creative_characteristics: ['product-focused', 'mobile-first'],
+      default_style_notes: 'Vertical portrait',
+    },
+    {
+      platform: 'facebook',
+      name: 'Facebook (1:1)',
+      target_width: 1080,
+      target_height: 1080,
+      aspect_ratio: '1:1',
+      creative_characteristics: ['balanced', 'square'],
+      default_style_notes: 'Square canvas',
+    },
+    {
+      platform: 'linkedin',
+      name: 'LinkedIn (1.91:1)',
+      target_width: 1200,
+      target_height: 628,
+      aspect_ratio: '1.91:1',
+      creative_characteristics: ['professional', 'landscape'],
+      default_style_notes: 'Wide landscape format',
+    },
+  ]);
 
   // Brief and Strategy State
   const [briefPayload, setBriefPayload] = useState<any>(null);
@@ -54,65 +96,16 @@ export default function NewBriefPage() {
   const [briefReport, setBriefReport] = useState<ValidationReport | null>(null);
   const [assetReport, setAssetReport] = useState<AssetValidationResponse | null>(null);
 
-  const runFullPipeline = async (targetBriefId: string) => {
-    if (!targetBriefId) return;
-    setPipelineRunning(true);
-    setPipelineError(null);
-    try {
-      // Step 2: Strategy
-      setPipelineStep('Generating Creative Strategy & verifying claims...');
-      const stratRes = await generateStrategy({ brief_id: targetBriefId });
-      if (stratRes.error || !stratRes.data) {
-        setPipelineError(stratRes.error || 'Failed to generate strategy');
-        return;
+  // Load platforms dynamically from backend registry
+  useEffect(() => {
+    async function loadPlatforms() {
+      const res = await fetchSupportedPlatforms();
+      if (res.data && res.data.length > 0) {
+        setAvailablePlatforms(res.data as PlatformDefinition[]);
       }
-      setStrategyResponse(stratRes.data);
-      const stratId = stratRes.data.strategy_id;
-
-      // Step 3: Background
-      setPipelineStep('Generating AI Platform Background (Instagram 4:5)...');
-      const bgRes = await generateBackground({ strategy_id: stratId, platform: 'instagram' });
-      if (bgRes.error || !bgRes.data) {
-        setPipelineError(bgRes.error || 'Failed to generate background');
-        return;
-      }
-      setBackgroundData(bgRes.data);
-      const bgId = bgRes.data.id;
-
-      // Step 4: Composite
-      setPipelineStep('Compositing Authentic Product Cutout onto Background...');
-      const compRes = await generateComposite({
-        background_id: bgId,
-        placement: { scale: 0.9, alignment: 'center' },
-        shadow: { enabled: true, opacity: 0.35 },
-      });
-      if (compRes.error || !compRes.data) {
-        setPipelineError(compRes.error || 'Failed to composite product');
-        return;
-      }
-      setCompositeData(compRes.data);
-      const compId = compRes.data.id;
-
-      // Step 5: Final Ad
-      setPipelineStep('Rendering Deterministic Typography, CTA & Scrim...');
-      const adRes = await generateFinalAd({
-        composite_id: compId,
-        typography: { font_family: 'Inter', headline_size: 52, headline_color: '#FFFFFF', alignment: 'left' },
-        cta: { bg_color: '#3B82F6', text_color: '#FFFFFF', border_radius: 10 },
-        readability: { auto_scrim: true },
-      });
-      if (adRes.error || !adRes.data) {
-        setPipelineError(adRes.error || 'Failed to render final ad');
-        return;
-      }
-      setFinalAdData(adRes.data);
-    } catch (err: any) {
-      setPipelineError(err.message || 'Pipeline execution failed');
-    } finally {
-      setPipelineRunning(false);
-      setPipelineStep(null);
     }
-  };
+    loadPlatforms();
+  }, []);
 
   const loadHealth = useCallback(async () => {
     setLoadingHealth(true);
@@ -143,6 +136,193 @@ export default function NewBriefPage() {
     if (briefId) setSavedBriefId(briefId);
   };
 
+  // Authoritative stage status and dependency graph
+  const stages: Record<WorkflowStage, StageStatusInfo> = {
+    brief: {
+      stage: 'brief',
+      label: 'Brief',
+      stepNumber: 1,
+      status: savedBriefId ? 'APPROVED' : 'DRAFT',
+      isComplete: !!savedBriefId,
+      isLocked: false,
+      dependencies: [],
+    },
+    strategy: {
+      stage: 'strategy',
+      label: 'Strategy',
+      stepNumber: 2,
+      status: strategyResponse ? 'APPROVED' : (savedBriefId ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!strategyResponse,
+      isLocked: !savedBriefId,
+      dependencies: [
+        {
+          id: 'brief_saved',
+          name: 'Ad Brief Saved & Validated',
+          satisfied: !!savedBriefId,
+          targetStage: 'brief',
+        },
+      ],
+    },
+    background: {
+      stage: 'background',
+      label: 'Background',
+      stepNumber: 3,
+      status: backgroundData ? 'APPROVED' : (strategyResponse ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!backgroundData,
+      isLocked: !strategyResponse,
+      dependencies: [
+        {
+          id: 'brief_saved',
+          name: 'Ad Brief Saved & Validated',
+          satisfied: !!savedBriefId,
+          targetStage: 'brief',
+        },
+        {
+          id: 'strategy_approved',
+          name: 'Creative Strategy Approved',
+          satisfied: !!strategyResponse,
+          targetStage: 'strategy',
+        },
+      ],
+    },
+    product: {
+      stage: 'product',
+      label: 'Product',
+      stepNumber: 4,
+      status: (assetReport?.is_valid || briefPayload?.images?.[0]?.url) ? 'APPROVED' : (savedBriefId ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!(assetReport?.is_valid || briefPayload?.images?.[0]?.url),
+      isLocked: !savedBriefId,
+      dependencies: [
+        {
+          id: 'brief_saved',
+          name: 'Ad Brief Saved',
+          satisfied: !!savedBriefId,
+          targetStage: 'brief',
+        },
+        {
+          id: 'product_asset',
+          name: 'Product Cutout Asset Provided',
+          satisfied: !!(assetReport?.is_valid || briefPayload?.images?.[0]?.url),
+          targetStage: 'brief',
+        },
+      ],
+    },
+    composite: {
+      stage: 'composite',
+      label: 'Composite',
+      stepNumber: 5,
+      status: compositeData ? 'APPROVED' : ((backgroundData && (assetReport?.is_valid || briefPayload?.images?.[0]?.url)) ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!compositeData,
+      isLocked: !backgroundData || !(assetReport?.is_valid || briefPayload?.images?.[0]?.url),
+      dependencies: [
+        {
+          id: 'brief_saved',
+          name: 'Ad Brief Approved',
+          satisfied: !!savedBriefId,
+          targetStage: 'brief',
+        },
+        {
+          id: 'strategy_approved',
+          name: 'Creative Strategy Approved',
+          satisfied: !!strategyResponse,
+          targetStage: 'strategy',
+        },
+        {
+          id: 'background_approved',
+          name: 'AI Background Approved',
+          satisfied: !!backgroundData,
+          targetStage: 'background',
+        },
+        {
+          id: 'product_qa',
+          name: 'Product Cutout QA Verified',
+          satisfied: !!(assetReport?.is_valid || briefPayload?.images?.[0]?.url),
+          targetStage: 'product',
+        },
+      ],
+    },
+    final_ad: {
+      stage: 'final_ad',
+      label: 'Final Ad',
+      stepNumber: 6,
+      status: finalAdData ? 'APPROVED' : (compositeData ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!finalAdData,
+      isLocked: !compositeData,
+      dependencies: [
+        {
+          id: 'composite_approved',
+          name: 'Product Composite Approved',
+          satisfied: !!compositeData,
+          targetStage: 'composite',
+        },
+      ],
+    },
+  };
+
+  const runFullPipeline = async (targetBriefId: string) => {
+    if (!targetBriefId) return;
+    setPipelineRunning(true);
+    setPipelineError(null);
+    try {
+      // Step 2: Strategy
+      setPipelineStep('Generating Creative Strategy & verifying claims...');
+      const stratRes = await generateStrategy({ brief_id: targetBriefId });
+      if (stratRes.error || !stratRes.data) {
+        setPipelineError(stratRes.error || 'Failed to generate strategy');
+        return;
+      }
+      setStrategyResponse(stratRes.data);
+      const stratId = stratRes.data.strategy_id;
+
+      // Step 3: Background
+      setPipelineStep(`Generating AI Platform Background (${currentPlatform.toUpperCase()})...`);
+      const bgRes = await generateBackground({ strategy_id: stratId, platform: currentPlatform });
+      if (bgRes.error || !bgRes.data) {
+        setPipelineError(bgRes.error || 'Failed to generate background');
+        return;
+      }
+      setBackgroundData(bgRes.data);
+      const bgId = bgRes.data.id;
+
+      // Step 4 & 5: Composite
+      setPipelineStep('Compositing Authentic Product Cutout onto Background...');
+      const compRes = await generateComposite({
+        background_id: bgId,
+        placement: { scale: 0.9, alignment: 'center' },
+        shadow: { enabled: true, opacity: 0.35 },
+      });
+      if (compRes.error || !compRes.data) {
+        setPipelineError(compRes.error || 'Failed to composite product');
+        return;
+      }
+      setCompositeData(compRes.data);
+      const compId = compRes.data.id;
+
+      // Step 6: Final Ad — use approved brand palette, not hardcoded colors
+      setPipelineStep('Rendering Deterministic Typography, CTA & Scrim...');
+      const brandPrimary = briefPayload?.brand?.colors?.primary || '#1D4ED8';
+      const adRes = await generateFinalAd({
+        composite_id: compId,
+        typography: { font_family: 'Inter', headline_size: 52, headline_color: '#FFFFFF', alignment: 'left' },
+        cta: { bg_color: brandPrimary, text_color: '#FFFFFF', border_radius: 10 },
+        readability: { auto_scrim: true },
+      });
+      if (adRes.error || !adRes.data) {
+        setPipelineError(adRes.error || 'Failed to render final ad');
+        return;
+      }
+      setFinalAdData(adRes.data);
+
+      // Automatically transition to the hero Final Ad stage
+      setActiveStage('final_ad');
+    } catch (err: any) {
+      setPipelineError(err.message || 'Pipeline execution failed');
+    } finally {
+      setPipelineRunning(false);
+      setPipelineStep(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono text-xs">
@@ -154,6 +334,122 @@ export default function NewBriefPage() {
   if (!isAuthenticated) {
     return <LoginView />;
   }
+
+  // Extract persistent product details
+  const persistentProduct = {
+    url: briefPayload?.images?.[0]?.url || 'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png',
+    name: briefPayload?.product?.name || 'SmartFit X1',
+    status: assetReport?.status || 'PASS',
+  };
+
+  // Determine Layer 3 Technical Details content for active stage
+  const getStageStructuredJson = () => {
+    switch (activeStage) {
+      case 'brief':
+        return briefPayload;
+      case 'strategy':
+        return strategyResponse?.strategy;
+      case 'background':
+        return backgroundData;
+      case 'product':
+        return assetReport;
+      case 'composite':
+        return compositeData;
+      case 'final_ad':
+        return finalAdData;
+    }
+  };
+
+  const getStageGenerationDetails = () => {
+    switch (activeStage) {
+      case 'background':
+        return {
+          prompt: backgroundData?.prompt?.positive_prompt,
+          negative_prompt: backgroundData?.prompt?.negative_prompt,
+          model: backgroundData?.model_name || 'mock-studio-v1',
+          provider: backgroundData?.provider || 'alias-ai',
+          attempt: backgroundData?.attempt_number || 1,
+          cost: '$0.00 (Mock / Dev Mode)',
+        };
+      case 'strategy':
+        return {
+          prompt: strategyResponse?.strategy?.concept?.angle,
+          model: 'llm-creative-strategist-v1',
+          provider: 'alias-strategy-engine',
+          attempt: 1,
+        };
+      case 'final_ad':
+        return {
+          prompt: 'Deterministic typography layout & CTA rasterization without generative hallucinations',
+          model: 'deterministic-ad-renderer-v1',
+          provider: 'pillow-core',
+          attempt: finalAdData?.attempt_number || 1,
+        };
+      default:
+        return null;
+    }
+  };
+
+  const getStageQADiagnostics = () => {
+    switch (activeStage) {
+      case 'brief':
+        return {
+          status: briefReport?.status,
+          issues: briefReport?.errors,
+          warnings: briefReport?.warnings,
+        };
+      case 'background': {
+        const bgQA = backgroundData?.qa_result;
+        const bgChecks = bgQA ? [
+          bgQA.dimension_check,
+          bgQA.text_artifact_check,
+          bgQA.watermark_check,
+          bgQA.extra_object_check,
+          bgQA.negative_space_check,
+          bgQA.product_safe_zone_check,
+          bgQA.brightness_check,
+        ].filter(Boolean) : undefined;
+        return {
+          status: backgroundData?.qa_status,
+          checks: bgChecks,
+          issues: bgQA?.issues,
+          warnings: bgQA?.warnings,
+        };
+      }
+      case 'product':
+        return {
+          status: assetReport?.status,
+          issues: assetReport?.report?.errors,
+          warnings: assetReport?.report?.warnings,
+        };
+      case 'composite': {
+        const compQA = compositeData?.qa_result;
+        const compChecks = compQA ? [
+          compQA.dimension_check,
+          compQA.placement_check,
+          compQA.visibility_check,
+          compQA.boundary_check,
+          compQA.integrity_check,
+        ].filter(Boolean) : undefined;
+        return {
+          status: compositeData?.qa_status,
+          checks: compChecks,
+          issues: compQA?.issues,
+          warnings: compQA?.warnings,
+        };
+      }
+      case 'final_ad':
+        return {
+          status: finalAdData?.qa_status,
+          checks: finalAdData?.qa_result?.checks,
+          issues: finalAdData?.qa_result?.issues,
+          warnings: finalAdData?.qa_result?.warnings,
+          visionAdvisory: finalAdData?.qa_result?.diagnostics?.vision_advisory,
+        };
+    }
+  };
+
+  const activeStageInfo = stages[activeStage];
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
@@ -167,172 +463,177 @@ export default function NewBriefPage() {
           onRefresh={loadHealth}
         />
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-8">
-          {/* Breadcrumb & Navigation */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Link
-                href="/"
-                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">Campaign Studio</h1>
-                <p className="text-xs text-slate-400">
-                  Step 1: Brief & Gates &nbsp;→&nbsp; Step 2: Strategy & Claims &nbsp;→&nbsp; Step 3: Platform Spec & AI Background &nbsp;→&nbsp; Step 4: Product Cutout & Compositing &nbsp;→&nbsp; Step 5: Final Ad
-                </p>
-              </div>
-            </div>
+        {/* Studio Top Navigation & Stepper */}
+        <StudioHeader
+          activeStage={activeStage}
+          onSelectStage={(stage) => setActiveStage(stage)}
+          stages={stages}
+          productAsset={persistentProduct}
+          onReplaceProductImage={() => setActiveStage('brief')}
+          currentPlatform={currentPlatform}
+          onSelectPlatform={(p) => setCurrentPlatform(p)}
+          availablePlatforms={availablePlatforms}
+        />
 
-            <div className="flex items-center space-x-3">
-              {savedBriefId && (
-                <button
-                  type="button"
-                  onClick={() => runFullPipeline(savedBriefId)}
-                  disabled={pipelineRunning}
-                  className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 transition-all"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-200" />
-                  <span>{pipelineRunning ? 'Generating Pipeline...' : '⚡ Generate Full Pipeline'}</span>
-                </button>
+        {/* Global Pipeline Progress / Error Banners */}
+        {pipelineRunning && (
+          <div className="px-6 py-2 bg-indigo-950/60 border-b border-indigo-500/30 flex items-center justify-between text-xs text-indigo-300 animate-pulse">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+              <span className="font-semibold text-white">Full Creative Pipeline In Progress:</span>
+              <span>{pipelineStep || 'Synthesizing creative stages...'}</span>
+            </div>
+          </div>
+        )}
+
+        {pipelineError && (
+          <div className="px-6 py-2 bg-rose-950/60 border-b border-rose-500/30 flex items-center justify-between text-xs text-rose-300">
+            <div>
+              <span className="font-semibold text-rose-200">Pipeline Notice: </span>
+              {pipelineError}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPipelineError(null)}
+              className="text-xs text-rose-400 hover:text-white underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* 70/20 Creative Production Workspace */}
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+          {/* Locked Stage Dependency Check */}
+          {activeStageInfo.isLocked ? (
+            <DependencyCard
+              stageName={activeStageInfo.label}
+              stageNumber={activeStageInfo.stepNumber}
+              dependencies={activeStageInfo.dependencies}
+              onNavigateStage={(s) => setActiveStage(s)}
+            />
+          ) : (
+            /* Unlocked Active Stage Content */
+            <div>
+              {activeStage === 'brief' && (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+                  <div className="xl:col-span-8">
+                    <BriefForm
+                      onValidated={handleValidationOutcome}
+                      onPayloadChange={handlePayloadChange}
+                      onSavedSuccess={(saved) => {
+                        setSavedBriefId(saved.id);
+                      }}
+                      onLoadDemoAndRun={async (saved) => {
+                        setSavedBriefId(saved.id);
+                        await runFullPipeline(saved.id);
+                      }}
+                    />
+                  </div>
+                  <div className="xl:col-span-4 sticky top-6 space-y-4">
+                    <ValidationFeedbackPanel
+                      briefReport={briefReport}
+                      assetReport={assetReport}
+                    />
+                    {savedBriefId && (
+                      <div className="p-4 rounded-xl bg-indigo-600/10 border border-indigo-500/30 space-y-3">
+                        <div className="flex items-center space-x-2 text-xs text-indigo-300 font-semibold">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                          <span>Ad Brief Saved (ID: {savedBriefId.slice(0, 8)}...)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveStage('strategy')}
+                          className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+                        >
+                          Continue to Step 2: Strategy →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
-              <div className="hidden sm:flex items-center space-x-2 text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                <span>Phase 1-6 Hard Gates Active</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Automated Pipeline Progress Banner */}
-          {pipelineRunning && (
-            <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/40 flex items-center space-x-3 text-indigo-300 animate-pulse shadow-lg">
-              <div className="w-4 h-4 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin shrink-0" />
-              <div className="text-xs">
-                <span className="font-semibold text-white">Automated Pipeline In Progress: </span>
-                <span>{pipelineStep || 'Processing pipeline stages...'}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Pipeline Error Banner */}
-          {pipelineError && (
-            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-rose-200">Pipeline Error: </span>
-                {pipelineError}
-              </div>
-              <button
-                type="button"
-                onClick={() => setPipelineError(null)}
-                className="text-xs underline text-rose-400 hover:text-rose-200 ml-4"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Step 1: Two-Column Responsive Grid (Brief Form + Gate Feedback) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-slate-800 text-indigo-400 text-xs flex items-center justify-center font-mono">1</span>
-                Ad Brief Specification & Ingestion Gates
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-              {/* Form Column (7 cols) */}
-              <div className="xl:col-span-7">
-                <BriefForm
-                  onValidated={handleValidationOutcome}
-                  onPayloadChange={handlePayloadChange}
-                  onSavedSuccess={(saved) => {
-                    setSavedBriefId(saved.id);
-                  }}
-                  onLoadDemoAndRun={async (saved) => {
-                    setSavedBriefId(saved.id);
-                    await runFullPipeline(saved.id);
+              {activeStage === 'strategy' && (
+                <StrategyPreviewPanel
+                  briefPayload={briefPayload}
+                  briefId={savedBriefId}
+                  initialStrategy={strategyResponse}
+                  onStrategyGenerated={(res) => {
+                    setStrategyResponse(res);
                   }}
                 />
-              </div>
+              )}
 
-              {/* Validation Feedback & Asset Inspection Column (5 cols) */}
-              <div className="xl:col-span-5 sticky top-6 space-y-4">
-                <ValidationFeedbackPanel
-                  briefReport={briefReport}
+              {activeStage === 'background' && (
+                <BackgroundPreviewPanel
+                  strategyId={strategyResponse?.strategy_id}
+                  templateId={strategyResponse?.strategy?.template_id}
+                  platform={currentPlatform}
+                  initialBackground={backgroundData}
+                  onBackgroundGenerated={(bg) => {
+                    setBackgroundData(bg);
+                  }}
+                />
+              )}
+
+              {activeStage === 'product' && (
+                <ProductStagePanel
+                  productName={briefPayload?.product?.name || 'SmartFit X1'}
+                  productImageUrl={briefPayload?.images?.[0]?.url || 'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png'}
+                  price={String(briefPayload?.product?.offer?.price || '4999')}
+                  currency={briefPayload?.product?.offer?.currency || 'BDT'}
+                  sku={briefPayload?.product?.sku}
+                  category={briefPayload?.product?.category}
                   assetReport={assetReport}
+                  onProceedToComposite={() => setActiveStage('composite')}
+                  onReplaceImage={() => setActiveStage('brief')}
                 />
-              </div>
-            </div>
-          </div>
+              )}
 
-          {/* Step 2: Creative Strategy & Claim Gate */}
-          <div className="space-y-3 pt-6 border-t border-slate-800/80">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-mono">2</span>
-                Creative Strategy & Claim Gate Engine
-              </h2>
-            </div>
-            <StrategyPreviewPanel
-              briefPayload={briefPayload}
-              briefId={savedBriefId}
-              initialStrategy={strategyResponse}
-              onStrategyGenerated={(res) => setStrategyResponse(res)}
-            />
-          </div>
+              {activeStage === 'composite' && (
+                <CompositePreviewPanel
+                  backgroundId={backgroundData?.id}
+                  platform={backgroundData?.platform || currentPlatform}
+                  productAssetUrl={briefPayload?.images?.[0]?.url || briefPayload?.product?.image_url}
+                  initialComposite={compositeData}
+                  onCompositeGenerated={(comp) => {
+                    setCompositeData(comp);
+                  }}
+                />
+              )}
 
-          {/* Step 3: Platform Creative Spec & Background Generation with Background QA */}
-          <div className="space-y-3 pt-6 border-t border-slate-800/80">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-mono">3</span>
-                Platform Creative Specs & AI Background Generation
-              </h2>
+              {activeStage === 'final_ad' && (
+                <FinalAdPreviewPanel
+                  compositeId={compositeData?.id}
+                  platform={compositeData?.platform || backgroundData?.platform || currentPlatform}
+                  initialAdData={finalAdData}
+                  onAdGenerated={(ad) => setFinalAdData(ad)}
+                  brandColors={briefPayload?.brand?.colors || []}
+                  exactCopy={{
+                    headline: briefPayload?.copy?.headline || strategyResponse?.strategy?.copy_spec?.headline,
+                    subheadline: briefPayload?.copy?.subheadline || strategyResponse?.strategy?.copy_spec?.subheadline,
+                    cta: briefPayload?.copy?.cta || strategyResponse?.strategy?.copy_spec?.cta,
+                  }}
+                />
+              )}
             </div>
-            <BackgroundPreviewPanel
-              strategyId={strategyResponse?.strategy_id}
-              templateId={strategyResponse?.strategy?.template_id}
-              initialBackground={backgroundData}
-              onBackgroundGenerated={(bg) => setBackgroundData(bg)}
-            />
-          </div>
-
-          {/* Step 4: Product Cutout Extraction & Deterministic Compositing */}
-          <div className="space-y-3 pt-6 border-t border-slate-800/80">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-mono">4</span>
-                Product Cutout Extraction & Deterministic Compositing
-              </h2>
-            </div>
-            <CompositePreviewPanel
-              backgroundId={backgroundData?.id}
-              platform={backgroundData?.platform || 'instagram'}
-              productAssetUrl={briefPayload?.images?.[0]?.url || briefPayload?.product?.image_url}
-              initialComposite={compositeData}
-              onCompositeGenerated={(comp) => setCompositeData(comp)}
-            />
-          </div>
-
-          {/* Step 5: Deterministic Final Advertisement Rendering & QA */}
-          <div className="space-y-3 pt-6 border-t border-slate-800/80 pb-12">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-sky-900 text-sky-300 text-xs flex items-center justify-center font-mono">5</span>
-                Deterministic Final Advertisement Rendering & QA
-              </h2>
-            </div>
-            <FinalAdPreviewPanel
-              compositeId={compositeData?.id}
-              platform={compositeData?.platform || backgroundData?.platform || 'instagram'}
-              initialAdData={finalAdData}
-              onAdGenerated={(ad) => setFinalAdData(ad)}
-            />
-          </div>
+          )}
         </main>
+
+        {/* Layer 3 Progressive Disclosure Technical Drawer */}
+        <TechnicalDrawer
+          stageName={activeStageInfo.label}
+          structuredJson={getStageStructuredJson()}
+          generationDetails={getStageGenerationDetails()}
+          qaDiagnostics={getStageQADiagnostics()}
+          provenance={finalAdData?.provenance_chain || compositeData?.integrity_metadata}
+          versionHistory={{
+            currentAttempt: finalAdData?.attempt_number || backgroundData?.attempt_number || 1,
+            isCached: finalAdData?.is_cached || backgroundData?.is_cached || false,
+          }}
+        />
       </div>
     </div>
   );
 }
-

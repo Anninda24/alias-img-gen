@@ -127,3 +127,12 @@ class FinalAdResponse(BaseModel):
     attempt_number: int
     is_cached: bool = False
     created_at: str
+
+    # Vision QA — advisory, runs only after final render when ENABLE_VISION_QA=True
+    # None means vision QA has not run (disabled or not yet executed).
+    vision_qa_status: Optional[str] = None
+    vision_qa_result: Optional[Dict[str, Any]] = None
+
+    # Dependency invalidation — True when an upstream input has changed
+    # and this final ad must be re-rendered before it can be approved.
+    is_stale: bool = False

@@ -506,13 +506,44 @@ class FinalAdService:
         )
 
         # =============================================================
-        # 12. Storage & State Finalization
+        # 12. Storage & State Finalization — encode final canvas to PNG
         # =============================================================
-        # Encode canvas to PNG bytes
         out_buf = io.BytesIO()
         canvas.save(out_buf, format="PNG", optimize=True)
         final_png_bytes = out_buf.getvalue()
         output_hash = hashlib.sha256(final_png_bytes).hexdigest()
+
+        # =============================================================
+        # Level 4 — Final Visual Verification (Hybrid Architecture)
+        # Cost control: ONLY runs after final render, NEVER after intermediate stages.
+        # Disabled by default (ENABLE_VISION_QA=False). Advisory only.
+        # =============================================================
+        from app.services.vision_verification_service import (
+            get_vision_verification_service,
+            build_expected_values_payload,
+        )
+        vision_svc = get_vision_verification_service()
+        vision_expected = build_expected_values_payload(
+            platform=composite.platform,
+            aspect_ratio=platform_spec.aspect_ratio,
+            width=w,
+            height=h,
+            headline=approved_headline,
+            subheadline=approved_subheadline,
+            cta=approved_cta,
+            offer_text=approved_offer,
+            brand_primary_color=brief.payload.get("brand", {}).get("colors", {}).get("primary") if brief.payload else None,
+            logo_url=brief.payload.get("brand", {}).get("logo_url") if brief.payload else None,
+        )
+        vision_result = await vision_svc.verify_final_ad(
+            image_bytes=final_png_bytes,
+            expected_values=vision_expected,
+            pipeline_call_count=0,  # Fresh pipeline: first and only call
+        )
+        vision_qa_status_val = vision_result.status.value if vision_result else None
+        vision_qa_result_val = vision_result.model_dump(mode="json") if vision_result else None
+        if vision_result:
+            qa_result.diagnostics["vision_advisory"] = vision_qa_result_val
 
         # Count prior attempts
         stmt_count = select(func.count(FinalRenderedCreativeRecord.id)).where(
@@ -593,6 +624,9 @@ class FinalAdService:
                 cache_key=cache_key,
                 is_cached=False,
                 attempt_number=attempt_number,
+                vision_qa_status=vision_qa_status_val,
+                vision_qa_result=vision_qa_result_val,
+                is_stale=False,
             )
             db.add(record)
             await db.commit()
@@ -640,6 +674,9 @@ class FinalAdService:
                 cache_key=None,  # Never cache failed renders!
                 is_cached=False,
                 attempt_number=attempt_number,
+                vision_qa_status=None,  # Vision QA not run on FAIL deterministic
+                vision_qa_result=None,
+                is_stale=False,
             )
             db.add(failed_record)
             await db.commit()

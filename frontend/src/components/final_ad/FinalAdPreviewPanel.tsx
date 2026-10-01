@@ -18,6 +18,10 @@ import {
   Hash,
   Layers,
   Lock,
+  Download,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   FinalAdResponse,
@@ -28,12 +32,16 @@ import {
 } from '../../lib/types';
 import { generateFinalAd, regenerateFinalAd, API_BASE_URL } from '../../lib/api';
 import { getAuthSession } from '../../lib/auth';
+import { SourceBadge } from '../common/SourceBadge';
+import { ColorPicker } from '../common/ColorPicker';
 
 interface FinalAdPreviewPanelProps {
   compositeId?: string;
   platform?: string;
   initialAdData?: FinalAdResponse | null;
   onAdGenerated?: (ad: FinalAdResponse) => void;
+  brandColors?: string[] | { primary: string; secondary: string; accent: string };
+  exactCopy?: { headline?: string; subheadline?: string; cta?: string };
 }
 
 export function FinalAdPreviewPanel({
@@ -41,10 +49,14 @@ export function FinalAdPreviewPanel({
   platform = 'instagram',
   initialAdData,
   onAdGenerated,
+  brandColors,
+  exactCopy,
 }: FinalAdPreviewPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adData, setAdData] = useState<FinalAdResponse | null>(initialAdData || null);
+  const [isApproved, setIsApproved] = useState(false);
+  const [showStyleControls, setShowStyleControls] = useState(false);
 
   React.useEffect(() => {
     if (initialAdData !== undefined) {
@@ -52,14 +64,22 @@ export function FinalAdPreviewPanel({
     }
   }, [initialAdData]);
 
+  const paletteArray = React.useMemo(() => {
+    if (Array.isArray(brandColors)) return brandColors;
+    if (brandColors && typeof brandColors === 'object') {
+      return [brandColors.primary, brandColors.secondary, brandColors.accent].filter(Boolean);
+    }
+    return ['#3B82F6', '#1E40AF', '#F59E0B'];
+  }, [brandColors]);
+
   // Deterministic typography & layout controls
   const [fontFamily, setFontFamily] = useState<string>('Inter');
   const [headlineSize, setHeadlineSize] = useState<number>(52);
   const [headlineColor, setHeadlineColor] = useState<string>('#FFFFFF');
   const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>('left');
   
-  // CTA controls
-  const [ctaBgColor, setCtaBgColor] = useState<string>('#3B82F6');
+  // CTA controls - default to primary brand color if available
+  const [ctaBgColor, setCtaBgColor] = useState<string>(paletteArray[0] || '#3B82F6');
   const [ctaTextColor, setCtaTextColor] = useState<string>('#FFFFFF');
   const [ctaRadius, setCtaRadius] = useState<number>(10);
 
@@ -101,6 +121,7 @@ export function FinalAdPreviewPanel({
       setError(res.error);
     } else if (res.data) {
       setAdData(res.data);
+      onAdGenerated?.(res.data);
     }
 
     setLoading(false);
@@ -134,10 +155,23 @@ export function FinalAdPreviewPanel({
       setError(res.error);
     } else if (res.data) {
       setAdData(res.data);
+      onAdGenerated?.(res.data);
       setCustomFeedback('');
     }
 
     setIsReRendering(false);
+  };
+
+  const handleDownload = () => {
+    if (!adData?.image_url) return;
+    const url = getFullImageUrl(adData.image_url);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `creative-${platform}-${adData.id}.png`;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const getFullImageUrl = (path?: string) => {
@@ -180,7 +214,7 @@ export function FinalAdPreviewPanel({
 
     return (
       <div className="flex items-start justify-between py-2 border-b border-slate-800/60 last:border-0 text-xs">
-        <div className="space-y-0.5 max-w-[70%]">
+        <div className="space-y-0.5 max-w-[75%]">
           <div className="font-medium text-slate-300 flex items-center gap-1.5">
             {isPass ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -191,17 +225,21 @@ export function FinalAdPreviewPanel({
             )}
             <span>{label}</span>
           </div>
-          <p className="text-[11px] text-slate-400 font-mono pl-5">{check.details}</p>
+          {check.details && (
+            <p className="text-[11px] text-slate-400 font-mono pl-5">{check.details}</p>
+          )}
         </div>
-        <div className="text-right font-mono text-[11px]">
-          <span
-            className={
-              isPass ? 'text-emerald-400' : isWarn ? 'text-amber-400' : 'text-rose-400 font-bold'
-            }
-          >
-            {Math.round(check.score * 100)}%
-          </span>
-        </div>
+        <span
+          className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+            isPass
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : isWarn
+              ? 'bg-amber-500/10 text-amber-400'
+              : 'bg-rose-500/10 text-rose-400'
+          }`}
+        >
+          {check.severity}
+        </span>
       </div>
     );
   };
@@ -235,101 +273,99 @@ export function FinalAdPreviewPanel({
         )}
       </div>
 
-      {/* Control Actions & Layout Configuration */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-950/50 rounded-lg border border-slate-800 text-xs">
-        {/* Font Family & Size */}
-        <div className="space-y-1.5">
-          <label className="text-slate-300 font-medium block flex items-center gap-1.5">
-            <Type className="w-3.5 h-3.5 text-sky-400" /> Font & Headline Size
-          </label>
-          <div className="flex items-center gap-2">
-            <select
-              value={fontFamily}
-              onChange={(e) => setFontFamily(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs w-28"
-            >
-              <option value="Inter">Inter</option>
-              <option value="Geist">Geist</option>
-            </select>
-            <input
-              type="number"
-              min={24}
-              max={96}
-              value={headlineSize}
-              onChange={(e) => setHeadlineSize(parseInt(e.target.value) || 52)}
-              className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs w-16"
-            />
-            <span className="text-[11px] text-slate-500 font-mono">px</span>
-          </div>
-        </div>
+      {/* Style Controls — collapsible, secondary */}
+      <div className="border border-slate-800 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowStyleControls(!showStyleControls)}
+          className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-950/60 hover:bg-slate-900/60 text-xs text-slate-300 font-medium transition-all cursor-pointer"
+        >
+          <span className="flex items-center gap-2">
+            <Sliders className="w-3.5 h-3.5 text-sky-400" />
+            Typography &amp; CTA Style Controls
+          </span>
+          {showStyleControls ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+        </button>
 
-        {/* Text Alignment */}
-        <div className="space-y-1.5">
-          <label className="text-slate-300 font-medium block">Copy Alignment</label>
-          <select
-            value={alignment}
-            onChange={(e) => setAlignment(e.target.value as any)}
-            className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs"
-          >
-            <option value="left">Left Aligned</option>
-            <option value="center">Centered</option>
-            <option value="right">Right Aligned</option>
-          </select>
-        </div>
+        {showStyleControls && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-950/50 text-xs">
+            {/* Font Family & Size */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-medium block flex items-center gap-1.5">
+                <Type className="w-3.5 h-3.5 text-sky-400" /> Font & Headline Size
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={fontFamily}
+                  onChange={(e) => setFontFamily(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs w-28"
+                >
+                  <option value="Inter">Inter</option>
+                  <option value="Geist">Geist</option>
+                </select>
+                <input
+                  type="number"
+                  min={24}
+                  max={96}
+                  value={headlineSize}
+                  onChange={(e) => setHeadlineSize(parseInt(e.target.value) || 52)}
+                  className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs w-16"
+                />
+                <span className="text-[11px] text-slate-500 font-mono">px</span>
+              </div>
+            </div>
 
-        {/* CTA Colors */}
-        <div className="space-y-1.5">
-          <label className="text-slate-300 font-medium block flex items-center gap-1.5">
-            <MousePointerClick className="w-3.5 h-3.5 text-sky-400" /> CTA Button Style
-          </label>
-          <div className="flex items-center gap-3 pt-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[11px]">BG:</span>
-              <input
-                type="color"
+            {/* Text Alignment */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-medium block">Copy Alignment</label>
+              <select
+                value={alignment}
+                onChange={(e) => setAlignment(e.target.value as any)}
+                className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs"
+              >
+                <option value="left">Left Aligned</option>
+                <option value="center">Centered</option>
+                <option value="right">Right Aligned</option>
+              </select>
+            </div>
+
+            {/* CTA Color — visual picker from brand palette */}
+            <div className="space-y-1.5">
+              <ColorPicker
+                label="CTA Button Color"
                 value={ctaBgColor}
-                onChange={(e) => setCtaBgColor(e.target.value)}
-                className="w-6 h-6 rounded border border-slate-700 bg-transparent cursor-pointer p-0"
+                onChange={setCtaBgColor}
+                brandColors={paletteArray}
+                description="Brand palette"
               />
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[11px]">Radius:</span>
-              <input
-                type="number"
-                min={0}
-                max={30}
-                value={ctaRadius}
-                onChange={(e) => setCtaRadius(parseInt(e.target.value) || 0)}
-                className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-slate-200 w-12 font-mono text-xs"
-              />
-            </div>
-          </div>
-        </div>
 
-        {/* Readability & Force Options */}
-        <div className="space-y-1.5">
-          <label className="text-slate-300 font-medium block">Readability & Cache</label>
-          <div className="flex flex-col gap-1.5 pt-0.5">
-            <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
-              <input
-                type="checkbox"
-                checked={autoScrim}
-                onChange={(e) => setAutoScrim(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
-              />
-              <span>Auto-Scrim Backplate</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
-              <input
-                type="checkbox"
-                checked={forceRegenerate}
-                onChange={(e) => setForceRegenerate(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
-              />
-              <span>Bypass Render Cache</span>
-            </label>
+            {/* Readability & Force Options */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-medium block">Readability & Cache</label>
+              <div className="flex flex-col gap-1.5 pt-0.5">
+                <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={autoScrim}
+                    onChange={(e) => setAutoScrim(e.target.checked)}
+                    className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span>Auto-Scrim Backplate</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={forceRegenerate}
+                    onChange={(e) => setForceRegenerate(e.target.checked)}
+                    className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span>Bypass Render Cache</span>
+                </label>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Render Action Button */}
@@ -356,9 +392,14 @@ export function FinalAdPreviewPanel({
         {adData && (
           <div className="flex items-center gap-3">
             {renderStatusBadge(adData.qa_status)}
-            <span className="text-xs font-mono text-slate-400">
-              Score: <span className="text-white font-bold">{Math.round(adData.qa_result.overall_score * 100)}%</span>
-            </span>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition-all cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download
+            </button>
           </div>
         )}
       </div>
@@ -408,38 +449,14 @@ export function FinalAdPreviewPanel({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-sky-400" />
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                    Deterministic Final Ad QA Scorecard
+                    Final Ad QA
                   </h4>
                 </div>
-                <span className="text-xs font-mono text-slate-400">
-                  7-Point Diagnostic Engine
-                </span>
+                {renderStatusBadge(adData.qa_status)}
               </div>
 
-              {/* Overall Progress Bar */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-slate-400">Ad QA Pass Index:</span>
-                  <span className="text-white font-bold">
-                    {Math.round(adData.qa_result.overall_score * 100)}%
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      adData.qa_status === 'PASS'
-                        ? 'bg-emerald-500'
-                        : adData.qa_status === 'WARNING'
-                        ? 'bg-amber-500'
-                        : 'bg-rose-500'
-                    }`}
-                    style={{ width: `${adData.qa_result.overall_score * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* 7 Diagnostic Checks List */}
-              <div className="pt-2 divide-y divide-slate-800/40">
+              {/* 7 Diagnostic Checks List — actionable pass/warn/fail only */}
+              <div className="divide-y divide-slate-800/40">
                 {renderDiagnosticRow('Dimensions & Aspect Ratio', adData.qa_result.dimension_check)}
                 {renderDiagnosticRow('Output Integrity & Opacity', adData.qa_result.opacity_check)}
                 {renderDiagnosticRow('Safe Zone & Overflow Containment', adData.qa_result.text_safe_zone_check)}

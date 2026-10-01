@@ -40,6 +40,22 @@ async def test_api_get_demo_brief(client):
 
 
 @pytest.mark.asyncio
+async def test_api_get_platforms(client):
+    response = await client.get("/api/v1/platforms")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) >= 3
+    platform_ids = [p["platform"] for p in data]
+    assert "instagram" in platform_ids
+    assert "facebook" in platform_ids
+    assert "linkedin" in platform_ids
+    ig = next(p for p in data if p["platform"] == "instagram")
+    assert ig["target_width"] == 1080
+    assert ig["target_height"] == 1350
+    assert ig["aspect_ratio"] == "4:5"
+
+
+@pytest.mark.asyncio
 async def test_api_asset_validate_url_ssrf_blocked(client):
     # Requesting loopback should be rejected immediately
     response = await client.post(

@@ -9,6 +9,7 @@ from app.api.v1.backgrounds import router as backgrounds_router
 from app.api.v1.composites import router as composites_router
 from app.api.v1.final_ads import router as final_ads_router
 from app.api.v1.jobs import router as jobs_router
+from app.api.v1.platforms import router as platforms_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(auth_router)
@@ -21,4 +22,5 @@ api_v1_router.include_router(backgrounds_router)
 api_v1_router.include_router(composites_router)
 api_v1_router.include_router(final_ads_router)
 api_v1_router.include_router(jobs_router)
+api_v1_router.include_router(platforms_router)
 

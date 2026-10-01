@@ -29,6 +29,7 @@ interface BackgroundPreviewPanelProps {
   templateId?: string;
   onBackgroundGenerated?: (bg: BackgroundResponse | null) => void;
   initialBackground?: BackgroundResponse | null;
+  platform?: TargetPlatform;
 }
 
 export function BackgroundPreviewPanel({
@@ -36,8 +37,11 @@ export function BackgroundPreviewPanel({
   templateId,
   onBackgroundGenerated,
   initialBackground,
+  platform: platformProp,
 }: BackgroundPreviewPanelProps) {
-  const [platform, setPlatform] = useState<TargetPlatform>('instagram');
+  const [localPlatform, setLocalPlatform] = useState<TargetPlatform>(platformProp || 'instagram');
+  const platform = platformProp || localPlatform;
+  const setPlatform = (p: TargetPlatform) => setLocalPlatform(p);
   const [forceRegenerate, setForceRegenerate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +52,10 @@ export function BackgroundPreviewPanel({
       setBackgroundData(initialBackground);
     }
   }, [initialBackground]);
+
+  React.useEffect(() => {
+    if (platformProp) setLocalPlatform(platformProp);
+  }, [platformProp]);
 
   // Regeneration states
   const [customFeedback, setCustomFeedback] = useState('');

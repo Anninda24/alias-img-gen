@@ -390,3 +390,35 @@ export interface RegenerateFinalAdPayload {
   custom_feedback?: string;
 }
 
+export interface PlatformDefinition {
+  platform: TargetPlatform;
+  name: string;
+  target_width: number;
+  target_height: number;
+  aspect_ratio: string;
+  creative_characteristics: string[];
+  default_style_notes: string;
+}
+
+export type WorkflowStage = 'brief' | 'strategy' | 'background' | 'product' | 'composite' | 'final_ad';
+
+export type StageState = 'DRAFT' | 'VALIDATING' | 'GENERATING' | 'QA' | 'WARNING' | 'APPROVED' | 'FAILED' | 'LOCKED';
+
+export interface StageDependencyCheck {
+  id: string;
+  name: string;
+  satisfied: boolean;
+  targetStage: WorkflowStage;
+}
+
+export interface StageStatusInfo {
+  stage: WorkflowStage;
+  label: string;
+  stepNumber: number;
+  status: StageState;
+  isComplete: boolean;
+  isLocked: boolean;
+  dependencies: StageDependencyCheck[];
+}
+
+

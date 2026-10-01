@@ -22,6 +22,7 @@ import {
   saveBrief,
 } from '../../lib/api';
 import { ValidationReport, AssetValidationResponse } from '../../lib/types';
+import { ColorPicker } from '../common/ColorPicker';
 
 interface BriefFormProps {
   onValidated: (
@@ -540,37 +541,45 @@ export const BriefForm: React.FC<BriefFormProps> = ({
           </div>
 
           {/* Color Palette Chips */}
-          <div className="pt-1 space-y-2">
-            <label className="text-xs font-medium text-slate-400 block">Brand Palette (Hex Colors)</label>
-            <div className="flex flex-wrap items-center gap-2">
-              {colors.map((c) => (
-                <span
-                  key={c}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200"
-                >
-                  <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: c }} />
-                  <span>{c}</span>
-                  <button type="button" onClick={() => removeColor(c)} className="hover:text-rose-400 ml-1">
-                    ×
-                  </button>
-                </span>
-              ))}
-              <div className="flex items-center space-x-1.5">
-                <input
-                  type="text"
-                  value={newColor}
-                  onChange={(e) => setNewColor(e.target.value)}
-                  className="w-24 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs font-mono text-white focus:outline-none"
-                  placeholder="#2563EB"
-                />
-                <button
-                  type="button"
-                  onClick={addColor}
-                  className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-xs hover:bg-slate-700"
-                >
-                  Add
-                </button>
-              </div>
+          <div className="pt-2 space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block">Brand Palette Definition</label>
+              <p className="text-[11px] text-slate-500">
+                Authoritative brand colors will be used across backgrounds, typography, and CTA buttons.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <ColorPicker
+                label="Primary Brand Color"
+                value={colors[0] || '#2563EB'}
+                onChange={(c) => {
+                  const updated = [...colors];
+                  updated[0] = c;
+                  setColors(updated);
+                }}
+                brandColors={colors}
+              />
+              <ColorPicker
+                label="Secondary / Dark Tone"
+                value={colors[1] || '#111827'}
+                onChange={(c) => {
+                  const updated = [...colors];
+                  updated[1] = c;
+                  setColors(updated);
+                }}
+                brandColors={colors}
+              />
+              <ColorPicker
+                label="Accent / Highlight"
+                value={colors[2] || '#10B981'}
+                onChange={(c) => {
+                  const updated = [...colors];
+                  updated[2] = c;
+                  setColors(updated);
+                }}
+                brandColors={colors}
+              />
             </div>
           </div>
         </div>

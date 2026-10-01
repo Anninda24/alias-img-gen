@@ -449,4 +449,21 @@ export async function dispatchJobStage(
   }
 }
 
+export async function fetchSupportedPlatforms(): Promise<{ data?: any[]; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/platforms`, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return { data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch supported platforms';
+    return { error: message };
+  }
+}
+
 export { API_BASE_URL };
+

@@ -131,3 +131,25 @@ class FinalRenderedCreativeRecord(Base, TimestampMixin):
         nullable=False,
     )
 
+    # Vision QA -- advisory, runs only after final render, never after every generation
+    # None means vision QA has not run for this record yet.
+    vision_qa_status: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        index=True,
+        nullable=True,
+        default=None,
+    )
+    vision_qa_result: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        CompatibleJSON,
+        nullable=True,
+        default=None,
+    )
+
+    # Dependency invalidation: set True when an authoritative upstream input changes.
+    # A stale final ad must be re-rendered before it can be approved.
+    is_stale: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+

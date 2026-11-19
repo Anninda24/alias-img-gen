@@ -37,6 +37,7 @@ async def get_demo_brief():
 async def create_and_validate_brief(
     payload: Dict[str, Any],
     validate_asset_now: bool = True,
+    require_transparency: bool = True,
     tenant: Tenant = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
 ):
@@ -47,9 +48,10 @@ async def create_and_validate_brief(
     brief_res = payload_gate_service.validate_brief(payload)
     if not brief_res.is_valid:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "message": "Brief rejected by Payload Gate.",
+                "gate_name": "Payload Gate",
                 "report": brief_res.report.model_dump(mode="json"),
             },
         )
@@ -64,24 +66,30 @@ async def create_and_validate_brief(
             if primary_url:
                 asset_res = await asset_gate_service.validate_url_and_asset(
                     url=primary_url,
-                    require_transparency=True,
+                    require_transparency=require_transparency,
                     allow_local_demo=True,
                 )
                 if not asset_res.is_valid:
                     raise HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                         detail={
                             "message": "Product asset rejected by Asset Gate.",
+                            "gate_name": "Asset Gate",
                             "report": asset_res.report.model_dump(mode="json"),
                         },
                     )
 
                 # Persist asset validation record
                 meta = asset_res.asset_metadata or {}
+                storage_key = meta.get("storage_key")
+                if not storage_key and primary_url and "/storage/" in primary_url:
+                    storage_key = primary_url.split("/storage/", 1)[-1].split("?")[0].strip("/")
+                    meta["storage_key"] = storage_key
+
                 asset_record = AssetValidationRecord(
                     tenant_id=tenant.id,
                     url=primary_url,
-                    storage_key=meta.get("storage_key"),
+                    storage_key=storage_key,
                     detected_mime=meta.get("detected_mime"),
                     width=meta.get("width"),
                     height=meta.get("height"),
@@ -158,6 +166,7 @@ async def create_and_validate_brief(
         "platforms": ad_brief.platforms,
         "brief_report": brief_res.report.model_dump(mode="json"),
         "asset_report": asset_res.report.model_dump(mode="json") if asset_res else None,
+        "asset_result": asset_res.model_dump(mode="json") if asset_res else None,
         "created_at": ad_brief.created_at.isoformat() if ad_brief.created_at else None,
     }
 

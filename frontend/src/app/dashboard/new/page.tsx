@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Sparkles, Layers, ShieldCheck, Download, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { Sidebar } from '../../../components/Sidebar';
 import { Header } from '../../../components/Header';
 import { BriefForm } from '../../../components/brief/BriefForm';
@@ -19,12 +18,19 @@ import { TechnicalDrawer } from '../../../components/common/TechnicalDrawer';
 import {
   fetchHealth,
   fetchSupportedPlatforms,
+  fetchBrief,
+  getStrategy,
+  getBackground,
+  getComposite,
+  getFinalAd,
+  getJobStatus,
   generateStrategy,
   generateBackground,
   generateComposite,
   generateFinalAd,
 } from '../../../lib/api';
 import { useAuth } from '../../../lib/AuthContext';
+import { useIsMounted } from '../../../lib/useIsMounted';
 import {
   SystemHealthResponse,
   ValidationReport,
@@ -37,10 +43,13 @@ import {
   StageStatusInfo,
   TargetPlatform,
   PlatformDefinition,
+  BriefPayload,
+  VisionQAResultSpec,
 } from '../../../lib/types';
 
 export default function NewBriefPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const mounted = useIsMounted();
   const [activeTab, setActiveTab] = useState('briefs');
   const [health, setHealth] = useState<SystemHealthResponse | undefined>(undefined);
   const [loadingHealth, setLoadingHealth] = useState(true);
@@ -80,12 +89,13 @@ export default function NewBriefPage() {
   ]);
 
   // Brief and Strategy State
-  const [briefPayload, setBriefPayload] = useState<any>(null);
+  const [briefPayload, setBriefPayload] = useState<BriefPayload | null>(null);
   const [savedBriefId, setSavedBriefId] = useState<string | undefined>(undefined);
   const [strategyResponse, setStrategyResponse] = useState<StrategyGenerationResponse | null>(null);
   const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(null);
   const [compositeData, setCompositeData] = useState<CompositeResponse | null>(null);
   const [finalAdData, setFinalAdData] = useState<FinalAdResponse | null>(null);
+  const [finalAdApproved, setFinalAdApproved] = useState(false);
 
   // Pipeline automated execution state
   const [pipelineRunning, setPipelineRunning] = useState(false);
@@ -95,6 +105,80 @@ export default function NewBriefPage() {
   // Validation Results State
   const [briefReport, setBriefReport] = useState<ValidationReport | null>(null);
   const [assetReport, setAssetReport] = useState<AssetValidationResponse | null>(null);
+
+  // Hydrate state from URL / localStorage on mount
+  useEffect(() => {
+    async function hydrateState() {
+      if (!isAuthenticated) return;
+      try {
+        const storedBriefId =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('brief_id') ||
+              localStorage.getItem('alias_studio_brief_id')
+            : null;
+
+        if (storedBriefId) {
+          const briefRes = await fetchBrief(storedBriefId);
+          if (briefRes.data) {
+            setSavedBriefId(storedBriefId);
+            setBriefPayload(briefRes.data.payload);
+            if (briefRes.data.validation_report) {
+              setBriefReport(briefRes.data.validation_report);
+            }
+          }
+        }
+
+        const storedJobId =
+          typeof window !== 'undefined' ? localStorage.getItem('alias_studio_job_id') : null;
+
+        if (storedJobId) {
+          const jobRes = await getJobStatus(storedJobId);
+          if (jobRes.data && (!storedBriefId || jobRes.data.brief_id === storedBriefId)) {
+            const { strategy_id, resource_ids } = jobRes.data;
+
+            if (strategy_id) {
+              const sRes = await getStrategy(strategy_id);
+              if (sRes.data) {
+                setStrategyResponse({
+                  strategy_id: sRes.data.id,
+                  status: sRes.data.status,
+                  strategy: sRes.data.strategy_spec,
+                  claim_report: sRes.data.claim_validation_report,
+                  retry_count: sRes.data.retry_count || 0,
+                  job_id: storedJobId,
+                  created_at: sRes.data.created_at || undefined,
+                });
+              }
+            }
+
+            if (resource_ids?.background_id) {
+              const bgRes = await getBackground(resource_ids.background_id);
+              if (bgRes.data) setBackgroundData(bgRes.data);
+            }
+
+            if (resource_ids?.composite_id) {
+              const compRes = await getComposite(resource_ids.composite_id);
+              if (compRes.data) setCompositeData(compRes.data);
+            }
+
+            if (resource_ids?.final_ad_id) {
+              const adRes = await getFinalAd(resource_ids.final_ad_id);
+              if (adRes.data) setFinalAdData(adRes.data);
+            }
+          } else {
+            // Job does not match currently active brief; clear stale job state
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('alias_studio_job_id');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to hydrate studio state from backend:', err);
+      }
+    }
+
+    hydrateState();
+  }, [isAuthenticated]);
 
   // Load platforms dynamically from backend registry
   useEffect(() => {
@@ -108,13 +192,15 @@ export default function NewBriefPage() {
   }, []);
 
   const loadHealth = useCallback(async () => {
-    setLoadingHealth(true);
-    const healthRes = await fetchHealth();
-    if (healthRes.data) {
-      setHealth(healthRes.data);
+    try {
+      const healthRes = await fetchHealth();
+      if (healthRes.data) {
+        setHealth(healthRes.data);
+      }
+      setLatencyMs(healthRes.latencyMs);
+    } finally {
+      setLoadingHealth(false);
     }
-    setLatencyMs(healthRes.latencyMs);
-    setLoadingHealth(false);
   }, []);
 
   useEffect(() => {
@@ -124,16 +210,39 @@ export default function NewBriefPage() {
   }, [isAuthenticated, loadHealth]);
 
   const handleValidationOutcome = (
-    bReport: ValidationReport | null,
-    aReport: AssetValidationResponse | null
+    bReport?: ValidationReport | null,
+    aReport?: AssetValidationResponse | null
   ) => {
-    if (bReport !== null) setBriefReport(bReport);
-    if (aReport !== null) setAssetReport(aReport);
+    if (bReport !== undefined) setBriefReport(bReport);
+    if (aReport !== undefined) setAssetReport(aReport);
   };
 
-  const handlePayloadChange = (payload: any, briefId?: string) => {
+  const handlePayloadChange = (payload: BriefPayload, briefId?: string) => {
+    const imageChanged = briefPayload && payload.images?.[0]?.url !== briefPayload.images?.[0]?.url;
     setBriefPayload(payload);
-    if (briefId) setSavedBriefId(briefId);
+    if (briefId && briefId !== savedBriefId) {
+      setSavedBriefId(briefId);
+      // Invalidate downstream stage artifacts from previous brief
+      setStrategyResponse(null);
+      setBackgroundData(null);
+      setCompositeData(null);
+      setFinalAdData(null);
+      setFinalAdApproved(false);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('alias_studio_job_id');
+        localStorage.setItem('alias_studio_brief_id', briefId);
+        const url = new URL(window.location.href);
+        url.searchParams.set('brief_id', briefId);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } else if (imageChanged) {
+      // Invalidate downstream stage artifacts when product image changes
+      setStrategyResponse(null);
+      setBackgroundData(null);
+      setCompositeData(null);
+      setFinalAdData(null);
+      setFinalAdApproved(false);
+    }
   };
 
   // Authoritative stage status and dependency graph
@@ -189,15 +298,15 @@ export default function NewBriefPage() {
       stage: 'product',
       label: 'Product',
       stepNumber: 4,
-      status: (assetReport?.is_valid || briefPayload?.images?.[0]?.url) ? 'APPROVED' : (savedBriefId ? 'DRAFT' : 'LOCKED'),
+      status: (assetReport?.is_valid || briefPayload?.images?.[0]?.url) ? 'APPROVED' : (backgroundData ? 'DRAFT' : 'LOCKED'),
       isComplete: !!(assetReport?.is_valid || briefPayload?.images?.[0]?.url),
-      isLocked: !savedBriefId,
+      isLocked: !backgroundData,
       dependencies: [
         {
-          id: 'brief_saved',
-          name: 'Ad Brief Saved',
-          satisfied: !!savedBriefId,
-          targetStage: 'brief',
+          id: 'background_approved',
+          name: 'AI Background Approved',
+          satisfied: !!backgroundData,
+          targetStage: 'background',
         },
         {
           id: 'product_asset',
@@ -245,8 +354,8 @@ export default function NewBriefPage() {
       stage: 'final_ad',
       label: 'Final Ad',
       stepNumber: 6,
-      status: finalAdData ? 'APPROVED' : (compositeData ? 'DRAFT' : 'LOCKED'),
-      isComplete: !!finalAdData,
+      status: (finalAdApproved || finalAdData) ? 'APPROVED' : (compositeData ? 'DRAFT' : 'LOCKED'),
+      isComplete: !!(finalAdApproved || finalAdData),
       isLocked: !compositeData,
       dependencies: [
         {
@@ -263,6 +372,12 @@ export default function NewBriefPage() {
     if (!targetBriefId) return;
     setPipelineRunning(true);
     setPipelineError(null);
+    // Reset any prior stage data to prevent displaying stale outputs
+    setStrategyResponse(null);
+    setBackgroundData(null);
+    setCompositeData(null);
+    setFinalAdData(null);
+    setFinalAdApproved(false);
     try {
       // Step 2: Strategy
       setPipelineStep('Generating Creative Strategy & verifying claims...');
@@ -273,6 +388,13 @@ export default function NewBriefPage() {
       }
       setStrategyResponse(stratRes.data);
       const stratId = stratRes.data.strategy_id;
+      if (!stratId) {
+        setPipelineError('Failed to generate creative strategy: missing strategy ID');
+        return;
+      }
+      if (stratRes.data.job_id && typeof window !== 'undefined') {
+        localStorage.setItem('alias_studio_job_id', stratRes.data.job_id);
+      }
 
       // Step 3: Background
       setPipelineStep(`Generating AI Platform Background (${currentPlatform.toUpperCase()})...`);
@@ -288,8 +410,10 @@ export default function NewBriefPage() {
       setPipelineStep('Compositing Authentic Product Cutout onto Background...');
       const compRes = await generateComposite({
         background_id: bgId,
+        product_image_url: briefPayload?.images?.[0]?.url,
         placement: { scale: 0.9, alignment: 'center' },
         shadow: { enabled: true, opacity: 0.35 },
+        force_regenerate: true,
       });
       if (compRes.error || !compRes.data) {
         setPipelineError(compRes.error || 'Failed to composite product');
@@ -300,12 +424,14 @@ export default function NewBriefPage() {
 
       // Step 6: Final Ad — use approved brand palette, not hardcoded colors
       setPipelineStep('Rendering Deterministic Typography, CTA & Scrim...');
-      const brandPrimary = briefPayload?.brand?.colors?.primary || '#1D4ED8';
+      const brandColors = briefPayload?.brand?.colors;
+      const brandPrimary = (Array.isArray(brandColors) ? brandColors[0] : undefined) || '#1D4ED8';
       const adRes = await generateFinalAd({
         composite_id: compId,
         typography: { font_family: 'Inter', headline_size: 52, headline_color: '#FFFFFF', alignment: 'left' },
         cta: { bg_color: brandPrimary, text_color: '#FFFFFF', border_radius: 10 },
         readability: { auto_scrim: true },
+        force_regenerate: true,
       });
       if (adRes.error || !adRes.data) {
         setPipelineError(adRes.error || 'Failed to render final ad');
@@ -315,15 +441,16 @@ export default function NewBriefPage() {
 
       // Automatically transition to the hero Final Ad stage
       setActiveStage('final_ad');
-    } catch (err: any) {
-      setPipelineError(err.message || 'Pipeline execution failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Pipeline execution failed';
+      setPipelineError(message);
     } finally {
       setPipelineRunning(false);
       setPipelineStep(null);
     }
   };
 
-  if (authLoading) {
+  if (!mounted || authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono text-xs">
         Verifying tenant credentials...
@@ -337,7 +464,10 @@ export default function NewBriefPage() {
 
   // Extract persistent product details
   const persistentProduct = {
-    url: briefPayload?.images?.[0]?.url || 'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png',
+    url:
+      briefPayload?.images?.[0]?.url ||
+      assetReport?.asset_metadata?.url ||
+      'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png',
     name: briefPayload?.product?.name || 'SmartFit X1',
     status: assetReport?.status || 'PASS',
   };
@@ -373,7 +503,7 @@ export default function NewBriefPage() {
         };
       case 'strategy':
         return {
-          prompt: strategyResponse?.strategy?.concept?.angle,
+          prompt: strategyResponse?.strategy?.concept?.creative_angle || strategyResponse?.strategy?.concept?.angle,
           model: 'llm-creative-strategist-v1',
           provider: 'alias-strategy-engine',
           attempt: 1,
@@ -416,12 +546,14 @@ export default function NewBriefPage() {
           warnings: bgQA?.warnings,
         };
       }
-      case 'product':
+      case 'product': {
+        const rep = assetReport?.report || (assetReport && 'errors' in assetReport ? (assetReport as unknown as ValidationReport) : undefined);
         return {
-          status: assetReport?.status,
-          issues: assetReport?.report?.errors,
-          warnings: assetReport?.report?.warnings,
+          status: assetReport?.status || rep?.status,
+          issues: rep?.errors,
+          warnings: rep?.warnings,
         };
+      }
       case 'composite': {
         const compQA = compositeData?.qa_result;
         const compChecks = compQA ? [
@@ -444,7 +576,7 @@ export default function NewBriefPage() {
           checks: finalAdData?.qa_result?.checks,
           issues: finalAdData?.qa_result?.issues,
           warnings: finalAdData?.qa_result?.warnings,
-          visionAdvisory: finalAdData?.qa_result?.diagnostics?.vision_advisory,
+          visionAdvisory: (finalAdData?.qa_result?.diagnostics?.vision_advisory as VisionQAResultSpec) || undefined,
         };
     }
   };
@@ -522,12 +654,26 @@ export default function NewBriefPage() {
                       onValidated={handleValidationOutcome}
                       onPayloadChange={handlePayloadChange}
                       onSavedSuccess={(saved) => {
-                        setSavedBriefId(saved.id);
+                        if (saved.id !== savedBriefId) {
+                          setSavedBriefId(saved.id);
+                          setStrategyResponse(null);
+                          setBackgroundData(null);
+                          setCompositeData(null);
+                          setFinalAdData(null);
+                          setFinalAdApproved(false);
+                          if (typeof window !== 'undefined') {
+                            localStorage.removeItem('alias_studio_job_id');
+                            localStorage.setItem('alias_studio_brief_id', saved.id);
+                          }
+                        }
                       }}
                       onLoadDemoAndRun={async (saved) => {
                         setSavedBriefId(saved.id);
                         await runFullPipeline(saved.id);
                       }}
+                      savedBriefId={savedBriefId}
+                      initialPayload={briefPayload}
+                      onProceedToStrategy={() => setActiveStage('strategy')}
                     />
                   </div>
                   <div className="xl:col-span-4 sticky top-6 space-y-4">
@@ -561,6 +707,10 @@ export default function NewBriefPage() {
                   initialStrategy={strategyResponse}
                   onStrategyGenerated={(res) => {
                     setStrategyResponse(res);
+                    setBackgroundData(null);
+                    setCompositeData(null);
+                    setFinalAdData(null);
+                    setFinalAdApproved(false);
                   }}
                 />
               )}
@@ -573,6 +723,9 @@ export default function NewBriefPage() {
                   initialBackground={backgroundData}
                   onBackgroundGenerated={(bg) => {
                     setBackgroundData(bg);
+                    setCompositeData(null);
+                    setFinalAdData(null);
+                    setFinalAdApproved(false);
                   }}
                 />
               )}
@@ -580,7 +733,11 @@ export default function NewBriefPage() {
               {activeStage === 'product' && (
                 <ProductStagePanel
                   productName={briefPayload?.product?.name || 'SmartFit X1'}
-                  productImageUrl={briefPayload?.images?.[0]?.url || 'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png'}
+                  productImageUrl={
+                    briefPayload?.images?.[0]?.url ||
+                    assetReport?.asset_metadata?.url ||
+                    'http://127.0.0.1:8000/api/v1/storage/demo/smartfit_x1.png'
+                  }
                   price={String(briefPayload?.product?.offer?.price || '4999')}
                   currency={briefPayload?.product?.offer?.currency || 'BDT'}
                   sku={briefPayload?.product?.sku}
@@ -595,10 +752,16 @@ export default function NewBriefPage() {
                 <CompositePreviewPanel
                   backgroundId={backgroundData?.id}
                   platform={backgroundData?.platform || currentPlatform}
-                  productAssetUrl={briefPayload?.images?.[0]?.url || briefPayload?.product?.image_url}
+                  productAssetUrl={
+                    briefPayload?.images?.[0]?.url ||
+                    assetReport?.asset_metadata?.url ||
+                    briefPayload?.product?.image_url
+                  }
                   initialComposite={compositeData}
                   onCompositeGenerated={(comp) => {
                     setCompositeData(comp);
+                    setFinalAdData(null);
+                    setFinalAdApproved(false);
                   }}
                 />
               )}
@@ -609,6 +772,7 @@ export default function NewBriefPage() {
                   platform={compositeData?.platform || backgroundData?.platform || currentPlatform}
                   initialAdData={finalAdData}
                   onAdGenerated={(ad) => setFinalAdData(ad)}
+                  onAdApproved={() => setFinalAdApproved(true)}
                   brandColors={briefPayload?.brand?.colors || []}
                   exactCopy={{
                     headline: briefPayload?.copy?.headline || strategyResponse?.strategy?.copy_spec?.headline,

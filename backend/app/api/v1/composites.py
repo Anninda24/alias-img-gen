@@ -51,6 +51,7 @@ async def generate_composite(
     record = await CompositeService.composite_product(
         db=db,
         background_id=request.background_id,
+        product_image_url=request.product_image_url,
         placement_config=request.placement,
         shadow_config=request.shadow,
         force_regenerate=request.force_regenerate,
@@ -156,6 +157,7 @@ async def regenerate_composite(
     new_record = await CompositeService.recomposite_product(
         db=db,
         composite_id=composite_id,
+        product_image_url=request.product_image_url,
         placement_config=request.placement,
         shadow_config=request.shadow,
         custom_feedback=request.custom_feedback,

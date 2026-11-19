@@ -8,7 +8,6 @@ import {
   HardDrive,
   Cpu,
   CheckCircle2,
-  AlertTriangle,
   Play,
   Layers,
   Sparkles,
@@ -21,17 +20,15 @@ import { API_BASE_URL } from '../lib/api';
 interface HealthDashboardProps {
   health?: SystemHealthResponse;
   status?: SystemStatusResponse;
-  loading: boolean;
+  loading?: boolean;
   latencyMs?: number;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 export const HealthDashboard: React.FC<HealthDashboardProps> = ({
   health,
   status,
-  loading,
   latencyMs,
-  onRefresh,
 }) => {
   const [probeResult, setProbeResult] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);

@@ -1,6 +1,6 @@
 import uuid
 from typing import Dict, Any, Optional
-from sqlalchemy import String, Integer, Boolean, ForeignKey
+from sqlalchemy import String, Integer, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 from app.models.base import TimestampMixin, CompatibleJSON
@@ -13,6 +13,9 @@ class FinalRenderedCreativeRecord(Base, TimestampMixin):
     Maintains complete audit provenance from source product asset to final pixels.
     """
     __tablename__ = "final_rendered_creatives"
+    __table_args__ = (
+        Index("ix_final_rendered_creatives_tenant_cache", "tenant_id", "cache_key"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36),

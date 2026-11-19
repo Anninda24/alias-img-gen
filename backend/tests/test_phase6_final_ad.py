@@ -958,6 +958,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
 
     # 1. Copy changed
@@ -972,6 +973,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_copy != base_key, "Cache key failed to invalidate on copy change"
 
@@ -987,6 +989,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_comp != base_key, "Cache key failed to invalidate on composite hash change"
 
@@ -1002,6 +1005,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes={"Inter_regular": "mutated_font_hash"},
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_font != base_key, "Cache key failed to invalidate on font hash change"
 
@@ -1019,6 +1023,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_size != base_key, "Cache key failed to invalidate on font size change"
 
@@ -1036,6 +1041,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_fam != base_key, "Cache key failed to invalidate on font family change"
 
@@ -1053,6 +1059,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_lh != base_key, "Cache key failed to invalidate on line height change"
 
@@ -1070,6 +1077,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_align != base_key, "Cache key failed to invalidate on alignment change"
 
@@ -1087,6 +1095,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_cta_geo != base_key, "Cache key failed to invalidate on CTA geometry change"
 
@@ -1104,6 +1113,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_cta_col != base_key, "Cache key failed to invalidate on CTA color change"
 
@@ -1121,6 +1131,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_price != base_key, "Cache key failed to invalidate on price badge change"
 
@@ -1138,6 +1149,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=mut_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_read != base_key, "Cache key failed to invalidate on scrim change"
 
@@ -1155,6 +1167,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=mut_logo,
+        tenant_id="tenant-test",
     )
     assert k_logo != base_key, "Cache key failed to invalidate on logo hash change"
 
@@ -1172,6 +1185,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=mut_logo_pl,
+        tenant_id="tenant-test",
     )
     assert k_logo_pl != base_key, "Cache key failed to invalidate on logo placement change"
 
@@ -1187,6 +1201,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_tmpl != base_key, "Cache key failed to invalidate on template change"
 
@@ -1202,6 +1217,7 @@ def test_phase6_1_exhaustive_cache_key_invalidation_matrix():
         readability_dict=base_read,
         font_hashes=base_fonts,
         logo_dict=base_logo,
+        tenant_id="tenant-test",
     )
     assert k_plat != base_key, "Cache key failed to invalidate on platform change"
 

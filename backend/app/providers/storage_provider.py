@@ -16,7 +16,14 @@ class LocalStorageProvider(StorageProvider):
     """
 
     def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = Path(base_dir or settings.LOCAL_STORAGE_PATH)
+        target = base_dir or settings.LOCAL_STORAGE_PATH
+        path_candidate = Path(target)
+        if not base_dir and not path_candidate.is_absolute():
+            # Resolve to backend/storage if started from repository root or sibling directory
+            backend_storage = Path(__file__).resolve().parent.parent.parent / "storage"
+            if backend_storage.exists() and (backend_storage / "demo").exists():
+                path_candidate = backend_storage
+        self.base_dir = path_candidate
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_path(self, key: str) -> Path:

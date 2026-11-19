@@ -1,6 +1,6 @@
 import uuid
 from typing import Dict, Any, Optional
-from sqlalchemy import String, Integer, Boolean, ForeignKey
+from sqlalchemy import String, Integer, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 from app.models.base import TimestampMixin, CompatibleJSON
@@ -9,6 +9,9 @@ from app.models.auth import DEFAULT_TENANT_ID
 
 class GeneratedBackgroundRecord(Base, TimestampMixin):
     __tablename__ = "generated_backgrounds"
+    __table_args__ = (
+        Index("ix_generated_backgrounds_tenant_cache", "tenant_id", "cache_key"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36),

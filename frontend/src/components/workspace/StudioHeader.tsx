@@ -4,15 +4,6 @@ import React from 'react';
 import {
   Check,
   Lock,
-  Sparkles,
-  Layers,
-  ArrowRight,
-  ShieldCheck,
-  Image as ImageIcon,
-  RefreshCw,
-  Sliders,
-  Eye,
-  CheckCircle2,
 } from 'lucide-react';
 import { WorkflowStage, StageStatusInfo, TargetPlatform, PlatformDefinition } from '../../lib/types';
 import { SourceBadge } from '../common/SourceBadge';

@@ -104,6 +104,7 @@ class CompositeGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     background_id: str = Field(..., description="ID of approved GeneratedBackgroundRecord")
+    product_image_url: Optional[str] = Field(default=None, description="Optional override product image URL to composite onto background")
     placement: Optional[ProductPlacementConfig] = Field(default=None, description="Optional product placement configuration")
     shadow: Optional[ShadowConfig] = Field(default=None, description="Optional shadow configuration")
     force_regenerate: bool = Field(default=False, description="Bypass cache and force recompositing")
@@ -112,6 +113,7 @@ class CompositeGenerateRequest(BaseModel):
 class CompositeRegenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    product_image_url: Optional[str] = Field(default=None, description="Optional override product image URL to composite onto background")
     placement: Optional[ProductPlacementConfig] = Field(default=None, description="Updated placement parameters")
     shadow: Optional[ShadowConfig] = Field(default=None, description="Updated shadow parameters")
     custom_feedback: Optional[str] = Field(default=None, max_length=300, description="Optional adjustment feedback")

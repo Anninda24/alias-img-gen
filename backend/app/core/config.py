@@ -61,10 +61,19 @@ class Settings(BaseSettings):
     # Vision QA configuration — expensive model; OFF by default, runs only on final render
     # Set to True in staging/production to enable post-render vision verification.
     ENABLE_VISION_QA: bool = False
-    # Provider class name: "mock" (default/dev) or "google_gemini" (production)
+    # Provider class name: "mock" (default/dev), "google_gemini", or "openai"
     VISION_QA_PROVIDER: str = "mock"
     # Maximum vision QA calls per pipeline run (cost guard)
     VISION_QA_MAX_CALLS_PER_PIPELINE: int = 1
+    GEMINI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+
+    # Publishing & Facebook OAuth configuration
+    ENABLE_FACEBOOK_PUBLISHING: bool = False
+    FACEBOOK_APP_ID: Optional[str] = None
+    FACEBOOK_APP_SECRET: Optional[str] = None
+    FACEBOOK_OAUTH_REDIRECT_URI: Optional[str] = None
+    AUTH_TOKEN_ENCRYPTION_KEY: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_production_configuration(self) -> "Settings":
@@ -74,6 +83,7 @@ class Settings(BaseSettings):
         2. If S3 storage is selected, required bucket and credentials must be present.
         3. If Celery worker is selected, REDIS_URL must be configured.
         4. In production, development auth MUST NOT be enabled.
+        5. If Facebook publishing is enabled in production, all secrets & valid encryption key must exist.
         """
         if self.ENVIRONMENT.lower() != "production":
             if "ENABLE_DEV_AUTH" not in self.model_fields_set:
@@ -88,6 +98,18 @@ class Settings(BaseSettings):
                 raise ValueError("Development authentication is strictly forbidden in production.")
             if self.AUTH_JWT_SECRET == "dev-insecure-jwt-secret" and not self.AUTH_JWKS_URL:
                 raise ValueError("Production environment forbids default/insecure AUTH_JWT_SECRET.")
+            if self.ENABLE_FACEBOOK_PUBLISHING:
+                if not self.FACEBOOK_APP_ID or not self.FACEBOOK_APP_SECRET:
+                    raise ValueError("Facebook publishing is enabled in production but FACEBOOK_APP_ID or FACEBOOK_APP_SECRET is missing.")
+                if not self.FACEBOOK_OAUTH_REDIRECT_URI:
+                    raise ValueError("Facebook publishing is enabled in production but FACEBOOK_OAUTH_REDIRECT_URI is missing.")
+                if not self.AUTH_TOKEN_ENCRYPTION_KEY:
+                    raise ValueError("Facebook publishing is enabled in production but AUTH_TOKEN_ENCRYPTION_KEY is missing.")
+
+        if self.AUTH_TOKEN_ENCRYPTION_KEY:
+            # Validate format/length if provided
+            from app.core.encryption import TokenEncryptionService
+            TokenEncryptionService._parse_and_validate_key(self.AUTH_TOKEN_ENCRYPTION_KEY)
 
         effective_storage = (self.STORAGE_TYPE or self.STORAGE_PROVIDER).lower()
         if effective_storage in ("s3", "r2"):

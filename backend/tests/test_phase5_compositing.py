@@ -468,6 +468,7 @@ def test_composite_cache_key_determinism():
         template_id="bold_commercial",
         placement_dict={"scale": 0.9, "alignment": "center", "padding": 0.05},
         shadow_dict={"enabled": True, "opacity": 0.35, "blur_radius": 18.0},
+        tenant_id="tenant-test",
     )
 
     key1 = CompositeService._compute_cache_key(**base_kwargs)

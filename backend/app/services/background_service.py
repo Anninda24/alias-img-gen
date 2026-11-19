@@ -96,12 +96,14 @@ class BackgroundService:
         model_name: str,
         width: int,
         height: int,
+        tenant_id: str,
         generation_params: Optional[Dict[str, Any]] = None,
         prompt_hash: Optional[str] = None,
     ) -> str:
         """
         Computes a comprehensive, deterministic SHA-256 cache key accounting for all
-        factors that affect image synthesis:
+        factors that affect image synthesis, strictly isolated by tenant:
+        - Mandatory tenant identity (rejects missing/empty tenant_id)
         - Strategy identity and version
         - Target platform and canvas dimensions (width, height)
         - Template ID
@@ -109,8 +111,13 @@ class BackgroundService:
         - Provider and model names
         - Canonical generation parameters (seed, steps, guidance_scale, sampler, etc.)
         """
+        if not tenant_id or not str(tenant_id).strip():
+            raise ValueError(f"tenant_id is required and cannot be empty (got {tenant_id!r})")
+        clean_tenant = str(tenant_id).strip()
+
         canonical_params = cls._canonicalize_params(generation_params)
         parts = [
+            f"tenant:{clean_tenant}",
             strategy_id,
             str(strategy_version),
             platform,
@@ -207,6 +214,11 @@ class BackgroundService:
             )
 
         # Enforce multi-tenant graph consistency
+        if not job.tenant_id or not str(job.tenant_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CreativeJob missing tenant_id. Tenant identity is strictly mandatory for background generation.",
+            )
         if (
             (job.tenant_id and strategy.tenant_id and job.tenant_id != strategy.tenant_id)
             or (brief.tenant_id and strategy.tenant_id and brief.tenant_id != strategy.tenant_id)
@@ -245,11 +257,13 @@ class BackgroundService:
             height=platform_spec.target_height,
             generation_params=generation_params,
             prompt_hash=initial_prompt_hash,
+            tenant_id=job.tenant_id,
         )
 
         if not force_regenerate:
             cached_stmt = select(GeneratedBackgroundRecord).where(
                 and_(
+                    GeneratedBackgroundRecord.tenant_id == job.tenant_id,
                     GeneratedBackgroundRecord.cache_key == cache_key,
                     GeneratedBackgroundRecord.qa_status.in_([QAStatus.PASS.value, QAStatus.WARNING.value]),
                 )
@@ -257,8 +271,8 @@ class BackgroundService:
             cached_res = await db.execute(cached_stmt)
             cached_record = cached_res.scalars().first()
 
-            if cached_record:
-                logger.info(f"Returning cached background for strategy {strategy_id}, platform {platform_spec.platform.value}")
+            if cached_record and cached_record.tenant_id == job.tenant_id:
+                logger.info(f"Returning cached background for strategy {strategy_id}, platform {platform_spec.platform.value} (tenant: {job.tenant_id})")
                 cached_record.is_cached = True
                 return cached_record
 
@@ -388,6 +402,7 @@ class BackgroundService:
                     height=platform_spec.target_height,
                     generation_params=generation_params,
                     prompt_hash=attempt_prompt_hash,
+                    tenant_id=job.tenant_id,
                 )
 
                 # Transition Job to BACKGROUND_APPROVED with preserved status & diagnostics

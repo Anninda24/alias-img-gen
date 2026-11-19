@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from app.core.config import settings
 from app.core.database import Base
+from app.core.db_safety import normalize_async_db_url
 import app.models  # Register all models for autogenerate metadata
 
 # this is the Alembic Config object, which provides
@@ -25,12 +26,7 @@ def get_url() -> str:
     url = config.get_main_option("sqlalchemy.url")
     if not url or url == "driver://user:pass@localhost/dbname":
         url = settings.DATABASE_URL
-    # Ensure async driver prefixes for SQLAlchemy async engine
-    if url.startswith("sqlite://"):
-        url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+    return normalize_async_db_url(url)
 
 
 

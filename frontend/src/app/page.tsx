@@ -8,9 +8,11 @@ import { LoginView } from '../components/auth/LoginView';
 import { fetchHealth, fetchStatus } from '../lib/api';
 import { SystemHealthResponse, SystemStatusResponse } from '../lib/types';
 import { useAuth } from '../lib/AuthContext';
+import { useIsMounted } from '../lib/useIsMounted';
 
 export default function Home() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const mounted = useIsMounted();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [health, setHealth] = useState<SystemHealthResponse | undefined>(undefined);
   const [status, setStatus] = useState<SystemStatusResponse | undefined>(undefined);
@@ -18,17 +20,19 @@ export default function Home() {
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
 
   const loadSystemInfo = useCallback(async () => {
-    setLoading(true);
-    const [healthRes, statusRes] = await Promise.all([fetchHealth(), fetchStatus()]);
-    if (healthRes.data) {
-      setHealth(healthRes.data);
-    }
-    setLatencyMs(healthRes.latencyMs);
+    try {
+      const [healthRes, statusRes] = await Promise.all([fetchHealth(), fetchStatus()]);
+      if (healthRes.data) {
+        setHealth(healthRes.data);
+      }
+      setLatencyMs(healthRes.latencyMs);
 
-    if (statusRes.data) {
-      setStatus(statusRes.data);
+      if (statusRes.data) {
+        setStatus(statusRes.data);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -37,7 +41,7 @@ export default function Home() {
     }
   }, [isAuthenticated, loadSystemInfo]);
 
-  if (authLoading) {
+  if (!mounted || authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono text-xs">
         Verifying tenant credentials...

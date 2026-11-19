@@ -11,12 +11,8 @@ import {
   Sliders,
   Sparkles,
   Info,
-  Maximize2,
   Type,
-  MousePointerClick,
-  Tag,
   Hash,
-  Layers,
   Lock,
   Download,
   Check,
@@ -26,13 +22,9 @@ import {
 import {
   FinalAdResponse,
   DiagnosticCheck,
-  TypographyStyle,
-  CTAStyle,
-  PriceBadgeStyle,
 } from '../../lib/types';
-import { generateFinalAd, regenerateFinalAd, API_BASE_URL } from '../../lib/api';
+import { generateFinalAd, regenerateFinalAd, approveFinalAd, API_BASE_URL } from '../../lib/api';
 import { getAuthSession } from '../../lib/auth';
-import { SourceBadge } from '../common/SourceBadge';
 import { ColorPicker } from '../common/ColorPicker';
 
 interface FinalAdPreviewPanelProps {
@@ -40,6 +32,7 @@ interface FinalAdPreviewPanelProps {
   platform?: string;
   initialAdData?: FinalAdResponse | null;
   onAdGenerated?: (ad: FinalAdResponse) => void;
+  onAdApproved?: () => void;
   brandColors?: string[] | { primary: string; secondary: string; accent: string };
   exactCopy?: { headline?: string; subheadline?: string; cta?: string };
 }
@@ -49,20 +42,24 @@ export function FinalAdPreviewPanel({
   platform = 'instagram',
   initialAdData,
   onAdGenerated,
+  onAdApproved,
   brandColors,
-  exactCopy,
 }: FinalAdPreviewPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adData, setAdData] = useState<FinalAdResponse | null>(initialAdData || null);
-  const [isApproved, setIsApproved] = useState(false);
-  const [showStyleControls, setShowStyleControls] = useState(false);
+  const [prevInitial, setPrevInitial] = useState(initialAdData);
 
-  React.useEffect(() => {
-    if (initialAdData !== undefined) {
-      setAdData(initialAdData);
-    }
-  }, [initialAdData]);
+  if (initialAdData !== prevInitial) {
+    setPrevInitial(initialAdData);
+    setAdData(initialAdData || null);
+  }
+
+  const [isApproved, setIsApproved] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [showStyleControls, setShowStyleControls] = useState(false);
+  const [showVisionDiagnostics, setShowVisionDiagnostics] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const paletteArray = React.useMemo(() => {
     if (Array.isArray(brandColors)) return brandColors;
@@ -75,17 +72,17 @@ export function FinalAdPreviewPanel({
   // Deterministic typography & layout controls
   const [fontFamily, setFontFamily] = useState<string>('Inter');
   const [headlineSize, setHeadlineSize] = useState<number>(52);
-  const [headlineColor, setHeadlineColor] = useState<string>('#FFFFFF');
+  const headlineColor = '#FFFFFF';
   const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>('left');
   
   // CTA controls - default to primary brand color if available
   const [ctaBgColor, setCtaBgColor] = useState<string>(paletteArray[0] || '#3B82F6');
-  const [ctaTextColor, setCtaTextColor] = useState<string>('#FFFFFF');
-  const [ctaRadius, setCtaRadius] = useState<number>(10);
+  const ctaTextColor = '#FFFFFF';
+  const ctaRadius = 10;
 
   // Readability
   const [autoScrim, setAutoScrim] = useState<boolean>(true);
-  const [forceRegenerate, setForceRegenerate] = useState<boolean>(false);
+  const forceRegenerate = false;
   const [isReRendering, setIsReRendering] = useState<boolean>(false);
   const [customFeedback, setCustomFeedback] = useState<string>('');
 
@@ -162,6 +159,20 @@ export function FinalAdPreviewPanel({
     setIsReRendering(false);
   };
 
+  const handleApprove = async () => {
+    if (!adData) return;
+    setIsApproving(true);
+    setError(null);
+    const res = await approveFinalAd(adData.id);
+    if (res.error) {
+      setError(res.error);
+    } else {
+      setIsApproved(true);
+      onAdApproved?.();
+    }
+    setIsApproving(false);
+  };
+
   const handleDownload = () => {
     if (!adData?.image_url) return;
     const url = getFullImageUrl(adData.image_url);
@@ -185,27 +196,55 @@ export function FinalAdPreviewPanel({
     return url;
   };
 
-  const renderStatusBadge = (status: 'PASS' | 'WARNING' | 'FAIL') => {
-    switch (status) {
-      case 'PASS':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" /> FINAL AD APPROVED
-          </span>
-        );
-      case 'WARNING':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <AlertTriangle className="w-3.5 h-3.5" /> AD ADVISORY
-          </span>
-        );
-      case 'FAIL':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <XCircle className="w-3.5 h-3.5" /> AD QA REJECTED
-          </span>
-        );
+  const renderStatusBadge = (ad: FinalAdResponse) => {
+    if (ad.is_stale) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+          <AlertTriangle className="w-3.5 h-3.5" /> STALE (INPUTS CHANGED)
+        </span>
+      );
     }
+    const isFailed = ad.qa_status === 'FAIL' || ad.vision_qa_status === 'FAILED' || ad.vision_qa_status === 'FAIL';
+    if (isFailed) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          <XCircle className="w-3.5 h-3.5" /> ✕ Verification failed
+        </span>
+      );
+    }
+    if (ad.vision_qa_status === 'UNAVAILABLE') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          <AlertTriangle className="w-3.5 h-3.5" /> ✕ Vision Verification Unavailable
+        </span>
+      );
+    }
+    if (ad.vision_qa_status === 'REAL_VERIFIED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <CheckCircle2 className="w-3.5 h-3.5" /> ✓ Verified by Vision
+        </span>
+      );
+    }
+    if (ad.vision_qa_status === 'MOCK_VERIFIED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+          <Sparkles className="w-3.5 h-3.5" /> ⚠ Mock Vision Verification — Dev Only
+        </span>
+      );
+    }
+    if (ad.qa_status === 'WARNING') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <AlertTriangle className="w-3.5 h-3.5" /> ⚠ Deterministic QA Passed (Warnings)
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <CheckCircle2 className="w-3.5 h-3.5" /> ✓ Deterministic QA Passed
+      </span>
+    );
   };
 
   const renderDiagnosticRow = (label: string, check: DiagnosticCheck) => {
@@ -320,7 +359,7 @@ export function FinalAdPreviewPanel({
               <label className="text-slate-300 font-medium block">Copy Alignment</label>
               <select
                 value={alignment}
-                onChange={(e) => setAlignment(e.target.value as any)}
+                onChange={(e) => setAlignment(e.target.value as 'left' | 'center' | 'right')}
                 className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-200 focus:outline-none focus:border-sky-500 font-mono text-xs"
               >
                 <option value="left">Left Aligned</option>
@@ -340,9 +379,9 @@ export function FinalAdPreviewPanel({
               />
             </div>
 
-            {/* Readability & Force Options */}
+            {/* Readability Options */}
             <div className="space-y-1.5">
-              <label className="text-slate-300 font-medium block">Readability & Cache</label>
+              <label className="text-slate-300 font-medium block">Readability Protection</label>
               <div className="flex flex-col gap-1.5 pt-0.5">
                 <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
                   <input
@@ -352,15 +391,6 @@ export function FinalAdPreviewPanel({
                     className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
                   />
                   <span>Auto-Scrim Backplate</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={forceRegenerate}
-                    onChange={(e) => setForceRegenerate(e.target.checked)}
-                    className="rounded border-slate-700 bg-slate-900 text-sky-600 focus:ring-0 w-3.5 h-3.5"
-                  />
-                  <span>Bypass Render Cache</span>
                 </label>
               </div>
             </div>
@@ -391,7 +421,43 @@ export function FinalAdPreviewPanel({
 
         {adData && (
           <div className="flex items-center gap-3">
-            {renderStatusBadge(adData.qa_status)}
+            {renderStatusBadge(adData)}
+            <button
+              type="button"
+              disabled={
+                isApproving ||
+                isApproved ||
+                adData.is_stale ||
+                adData.qa_status === 'FAIL' ||
+                adData.vision_qa_status === 'FAILED' ||
+                adData.vision_qa_status === 'FAIL' ||
+                adData.vision_qa_status === 'UNAVAILABLE'
+              }
+              onClick={handleApprove}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                isApproved
+                  ? 'bg-emerald-600 text-white cursor-default'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+              title={
+                adData.is_stale
+                  ? 'Cannot approve stale advertisement'
+                  : adData.qa_status === 'FAIL'
+                  ? 'Cannot approve creative with failed deterministic QA'
+                  : adData.vision_qa_status === 'FAILED' || adData.vision_qa_status === 'FAIL'
+                  ? 'Cannot approve creative with failed visual verification'
+                  : adData.vision_qa_status === 'UNAVAILABLE'
+                  ? 'Visual verification is required but unavailable'
+                  : 'Approve final advertisement'
+              }
+            >
+              {isApproving ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
+              {isApproved ? 'Creative Approved' : isApproving ? 'Approving...' : 'Approve Creative'}
+            </button>
             <button
               type="button"
               onClick={handleDownload}
@@ -403,6 +469,26 @@ export function FinalAdPreviewPanel({
           </div>
         )}
       </div>
+
+      {/* Stale Warning Banner */}
+      {adData?.is_stale && (
+        <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-lg text-amber-300 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>
+              <strong>Ad is Stale:</strong> Authoritative upstream assets (Product cutout, Strategy, or Background) have changed. Please re-render to update the final advertisement.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleReRender}
+            disabled={isReRendering}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded transition-all cursor-pointer shrink-0"
+          >
+            {isReRendering ? 'Re-rendering...' : 'Re-render Now'}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-xs flex items-start gap-2">
@@ -452,7 +538,7 @@ export function FinalAdPreviewPanel({
                     Final Ad QA
                   </h4>
                 </div>
-                {renderStatusBadge(adData.qa_status)}
+                {renderStatusBadge(adData)}
               </div>
 
               {/* 7 Diagnostic Checks List — actionable pass/warn/fail only */}
@@ -544,6 +630,150 @@ export function FinalAdPreviewPanel({
                 </button>
               </div>
             </div>
+
+            {/* Level 4 Vision Verification Card */}
+            {(adData.vision_qa_result || adData.vision_qa_status) && (
+              <div className="p-4 bg-slate-950/70 rounded-xl border border-indigo-900/40 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Visual Verification
+                    </h4>
+                  </div>
+                  {adData.vision_qa_status === 'REAL_VERIFIED' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <CheckCircle2 className="w-3 h-3" /> ✓ Verified by Vision
+                    </span>
+                  ) : adData.vision_qa_status === 'MOCK_VERIFIED' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                      <Sparkles className="w-3 h-3" /> ⚠ Mock Vision Verification — Development Only
+                    </span>
+                  ) : adData.vision_qa_status === 'UNAVAILABLE' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <AlertTriangle className="w-3 h-3" /> Vision Verification Unavailable
+                    </span>
+                  ) : adData.vision_qa_status === 'FAILED' || adData.vision_qa_status === 'FAIL' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <XCircle className="w-3 h-3" /> ✕ Vision Verification Failed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                      Deterministic QA Passed (Vision Verification Not Enabled)
+                    </span>
+                  )}
+                </div>
+
+                {adData.vision_qa_result?.summary && (
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                    {adData.vision_qa_result.summary}
+                  </p>
+                )}
+
+                {/* Expandable QA Diagnostics */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setShowVisionDiagnostics(!showVisionDiagnostics)}
+                    className="w-full flex items-center justify-between text-xs text-slate-300 hover:text-white py-1 cursor-pointer font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                      Visual QA Diagnostics
+                    </span>
+                    {showVisionDiagnostics ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {showVisionDiagnostics && adData.vision_qa_result?.checks && (
+                    <div className="mt-2 space-y-1.5 bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-xs font-mono">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Dimensions & Safe-Zone:</span>
+                        <span className={adData.vision_qa_result.checks.dimensions !== false ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.dimensions !== false ? '✓ PASS' : '✕ FAIL'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Product Visibility:</span>
+                        <span className={adData.vision_qa_result.checks.product_visible !== false ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.product_visible !== false ? '✓ PASS' : '✕ FAIL'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Text Readability & Copy Match:</span>
+                        <span className={adData.vision_qa_result.checks.text_readability !== false ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.text_readability !== false ? '✓ PASS' : '✕ FAIL'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Composition & Balance:</span>
+                        <span className={adData.vision_qa_result.checks.composition !== false ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.composition !== false ? '✓ PASS' : '⚠ WARN'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Brand Color & Logo Alignment:</span>
+                        <span className={adData.vision_qa_result.checks.branding !== false ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.branding !== false ? '✓ PASS' : '⚠ WARN'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">No Visual Hallucinations/Artifacts:</span>
+                        <span className={adData.vision_qa_result.checks.artifacts === false ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                          {adData.vision_qa_result.checks.artifacts === false ? '✓ PASS' : '✕ DETECTED'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Collapsible Technical Details (collapsed by default) */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                    className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 py-1 cursor-pointer font-mono"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5 text-indigo-400" />
+                      Technical Details (Model, Latency, Cost)
+                    </span>
+                    {showTechnicalDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {showTechnicalDetails && (
+                    <div className="mt-2 p-3 bg-slate-900/90 rounded-lg border border-slate-800 text-[11px] font-mono space-y-2 text-slate-300">
+                      <div className="grid grid-cols-2 gap-2 text-slate-400">
+                        <div>
+                          <span className="text-slate-500 block">Model/Provider:</span>
+                          <span className="text-slate-200">{adData.vision_qa_result?.model_name || adData.vision_qa_result?.model || 'mock-vision-qa-v1'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Verification ID:</span>
+                          <span className="text-slate-200">{(adData.vision_qa_result?.verification_id || adData.vision_qa_result?.generation_id)?.slice(0, 16) || 'auto-gen'}...</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Timestamp:</span>
+                          <span className="text-slate-200">{adData.vision_qa_result?.verified_at || adData.vision_qa_result?.timestamp || new Date().toISOString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Cost & Budget:</span>
+                          <span className="text-emerald-400">
+                            {adData.vision_qa_result?.is_mock ? 'Mock ($0.00 — Dev)' : '$0.00 (Single Call Guard Enforced)'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500 block pb-1">Raw Structured Output:</span>
+                        <pre className="p-2 bg-slate-950 rounded border border-slate-800/80 overflow-x-auto text-[10px] text-slate-300 max-h-40">
+                          {JSON.stringify(adData.vision_qa_result, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

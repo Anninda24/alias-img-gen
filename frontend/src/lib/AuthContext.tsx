@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { UserSession, getAuthSession, setAuthSession, clearAuthSession, loginWithDevCredentials } from './auth';
+import { UserSession, getAuthSession, clearAuthSession, loginWithDevCredentials } from './auth';
 
 interface AuthContextType {
   session: UserSession | null;
@@ -23,24 +23,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSessionState] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize session from localStorage or auto-bootstrap dev session
+  // Auto-bootstrap or restore session on client mount to prevent SSR hydration mismatch
   useEffect(() => {
-    const existing = getAuthSession();
-    if (existing) {
-      setSessionState(existing);
-      setIsLoading(false);
-    } else {
-      // Auto-bootstrap default developer session in local dev for seamless developer ergonomics
-      loginWithDevCredentials('developer@example.com')
-        .then((res) => {
-          if (res.success && res.session) {
-            setSessionState(res.session);
-          }
-        })
-        .finally(() => {
+    let isMounted = true;
+
+    const restoreOrBootstrap = async () => {
+      const existingSession = getAuthSession();
+      if (existingSession) {
+        if (isMounted) {
+          setSessionState(existingSession);
           setIsLoading(false);
-        });
-    }
+        }
+        return;
+      }
+
+      try {
+        const res = await loginWithDevCredentials('developer@example.com');
+        if (isMounted && res.success && res.session) {
+          setSessionState(res.session);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    restoreOrBootstrap();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = useCallback(async (email: string = 'developer@example.com', tenantId?: string) => {

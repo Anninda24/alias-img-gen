@@ -1,13 +1,26 @@
-﻿"""
+"""
 Vision Verification Schema.
 
 Structured result type for the post-final-render vision QA check.
 Uses the same QAStatus conventions as the rest of the pipeline.
 Vision QA is ADVISORY only -- it supplements deterministic checks, never replaces them.
 """
+from enum import Enum
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.background import QAStatus
+
+
+class VisionQAStatus(str, Enum):
+    """
+    Explicit, auditable gate status for the final ad visual verification stage.
+    Ensures mock results are never confused with genuine production model evaluation.
+    """
+    NOT_RUN = "NOT_RUN"
+    REAL_VERIFIED = "REAL_VERIFIED"
+    MOCK_VERIFIED = "MOCK_VERIFIED"
+    UNAVAILABLE = "UNAVAILABLE"
+    FAILED = "FAILED"
 
 
 class VisionCheckResult(BaseModel):
@@ -66,10 +79,14 @@ class VisionVerificationResult(BaseModel):
     summary: str
     advisory: bool = True
 
-    # Provenance / cost tracking
+    # Provenance / cost tracking & authenticity
     provider: str = "mock"
     model_name: str = "mock-vision-v1"
+    is_mock: bool = True
+    verification_id: Optional[str] = None
     generation_id: Optional[str] = None
+    output_hash: Optional[str] = None
+    final_ad_id: Optional[str] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     latency_ms: Optional[int] = None

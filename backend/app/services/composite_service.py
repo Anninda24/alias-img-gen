@@ -83,8 +83,18 @@ class CompositeService:
         template_id: str,
         placement_dict: Dict[str, Any],
         shadow_dict: Dict[str, Any],
+        tenant_id: str,
     ) -> str:
+        """
+        Computes a deterministic SHA-256 cache key strictly isolated by tenant.
+        Rejects missing, empty, or whitespace-only tenant_id.
+        """
+        if not tenant_id or not str(tenant_id).strip():
+            raise ValueError(f"tenant_id is required and cannot be empty (got {tenant_id!r})")
+        clean_tenant = str(tenant_id).strip()
+
         parts = [
+            f"tenant:{clean_tenant}",
             source_asset_hash,
             cutout_hash,
             background_id,
@@ -102,24 +112,54 @@ class CompositeService:
         storage: Any,
     ) -> bytes:
         """
-        Retrieves the authenticated source product image bytes from storage.
+        Retrieves the authenticated source product image bytes from storage or URL.
         Falls back to generating demo fixture bytes for local offline development.
         """
-        # 1. Try resolving via storage_key
+        # 1. Try resolving via explicit storage_key
         if asset_record.storage_key:
             try:
                 return await storage.get_bytes(asset_record.storage_key)
             except Exception as e:
                 logger.warning(f"Storage lookup for {asset_record.storage_key} failed: {e}")
 
-        # 2. Try common demo asset keys
+        # 2. Try extracting storage_key from asset_record.url (e.g. /storage/demo/iphone.png -> demo/iphone.png)
+        raw_url = asset_record.url or ""
+        if "/storage/" in raw_url:
+            candidate_key = raw_url.split("/storage/", 1)[-1].split("?")[0].strip("/")
+            try:
+                return await storage.get_bytes(candidate_key)
+            except Exception as e:
+                logger.warning(f"Storage lookup for extracted key '{candidate_key}' failed: {e}")
+
+        # 3. Try resolving via direct URL download (local dev server or external asset)
+        if raw_url.startswith("http://") or raw_url.startswith("https://"):
+            try:
+                from app.services.asset_gate import asset_gate_service
+                download_result, download_err = await asset_gate_service._secure_download(
+                    raw_url, allow_local_demo=True
+                )
+                if download_result and download_result[0]:
+                    return download_result[0]
+                if download_err:
+                    logger.warning(f"Direct download for asset URL '{raw_url}' failed: {download_err}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch asset from URL '{raw_url}': {e}")
+
+        # 4. Try raw_url directly as a relative storage key
+        if raw_url and not raw_url.startswith("http"):
+            try:
+                return await storage.get_bytes(raw_url.lstrip("/"))
+            except Exception:
+                pass
+
+        # 5. Fallback for offline mock tests: common demo asset keys
         for candidate_key in ["demo/smartfit_x1.png", "assets/demo/smartfit_x1.png"]:
             try:
                 return await storage.get_bytes(candidate_key)
             except Exception:
                 pass
 
-        # 3. For local test/dev: generate fresh demo smartwatch fixture
+        # 6. Final fallback for local test harness
         demo_bytes = generate_demo_smartwatch_png()
         await storage.save_bytes(demo_bytes, "demo/smartfit_x1.png", content_type="image/png")
         return demo_bytes
@@ -129,6 +169,7 @@ class CompositeService:
         cls,
         db: AsyncSession,
         background_id: str,
+        product_image_url: Optional[str] = None,
         placement_config: Optional[ProductPlacementConfig] = None,
         shadow_config: Optional[ShadowConfig] = None,
         force_regenerate: bool = False,
@@ -189,11 +230,13 @@ class CompositeService:
             )
 
         # D. Asset Gate
-        primary_url = brief.payload.get("images", [{}])[0].get("url") if brief.payload else None
+        primary_url = (product_image_url.strip() if product_image_url and product_image_url.strip() else None) or (
+            brief.payload.get("images", [{}])[0].get("url") if brief.payload else None
+        )
         if not primary_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No product image URL found in validated brief. Pipeline gate compromised.",
+                detail="No product image URL found in validated brief or request. Pipeline gate compromised.",
             )
 
         stmt_asset = (
@@ -202,6 +245,48 @@ class CompositeService:
             .order_by(desc(AssetValidationRecord.created_at))
         )
         asset_record = (await db.execute(stmt_asset)).scalars().first()
+        if not asset_record and product_image_url:
+            # On-the-fly Asset Gate validation and record persistence for explicit override product image
+            from app.services.asset_gate import asset_gate_service
+            val_res = await asset_gate_service.validate_url_and_asset(
+                url=primary_url,
+                require_transparency=True,
+                allow_local_demo=True,
+            )
+            if not val_res.is_valid:
+                val_res = await asset_gate_service.validate_url_and_asset(
+                    url=primary_url,
+                    require_transparency=False,
+                    allow_local_demo=True,
+                )
+            if not val_res.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"The product asset '{primary_url}' failed Asset Gate validation. Pipeline gate compromised.",
+                )
+            meta = val_res.asset_metadata or {}
+            storage_key = meta.get("storage_key")
+            if not storage_key and primary_url and "/storage/" in primary_url:
+                storage_key = primary_url.split("/storage/", 1)[-1].split("?")[0].strip("/")
+
+            asset_record = AssetValidationRecord(
+                tenant_id=background.tenant_id,
+                url=primary_url,
+                storage_key=storage_key,
+                detected_mime=meta.get("detected_mime"),
+                width=meta.get("width"),
+                height=meta.get("height"),
+                aspect_ratio=meta.get("aspect_ratio"),
+                has_alpha_channel=meta.get("has_alpha_channel", False),
+                transparency_percent=meta.get("transparency_percent"),
+                file_size_bytes=meta.get("file_size_bytes"),
+                validation_status=val_res.status.value,
+                validation_report=val_res.report.model_dump(mode="json"),
+            )
+            db.add(asset_record)
+            await db.commit()
+            await db.refresh(asset_record)
+
         if not asset_record or asset_record.validation_status not in ["PASS", "WARNING"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,6 +316,11 @@ class CompositeService:
             )
 
         # Enforce multi-tenant graph consistency
+        if not job.tenant_id or not str(job.tenant_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CreativeJob missing tenant_id. Tenant identity is strictly mandatory for compositing.",
+            )
         if (
             (job.tenant_id and background.tenant_id and job.tenant_id != background.tenant_id)
             or (strategy.tenant_id and background.tenant_id and strategy.tenant_id != background.tenant_id)
@@ -345,11 +435,13 @@ class CompositeService:
             template_id=strategy.template_id,
             placement_dict=placement_cfg.model_dump(),
             shadow_dict=shadow_cfg.model_dump(),
+            tenant_id=job.tenant_id,
         )
 
         if not force_regenerate:
             stmt_cache = select(CompositedCreativeRecord).where(
                 and_(
+                    CompositedCreativeRecord.tenant_id == job.tenant_id,
                     CompositedCreativeRecord.cache_key == cache_key,
                     CompositedCreativeRecord.qa_status.in_([QAStatus.PASS.value, QAStatus.WARNING.value]),
                 )
@@ -357,8 +449,8 @@ class CompositeService:
             cached_res = await db.execute(stmt_cache)
             cached_record = cached_res.scalars().first()
 
-            if cached_record:
-                logger.info(f"Returning cached composited creative for background {background_id}")
+            if cached_record and cached_record.tenant_id == job.tenant_id:
+                logger.info(f"Returning cached composited creative for background {background_id} (tenant: {job.tenant_id})")
                 cached_record.is_cached = True
                 return cached_record
 
@@ -499,6 +591,7 @@ class CompositeService:
         cls,
         db: AsyncSession,
         composite_id: str,
+        product_image_url: Optional[str] = None,
         placement_config: Optional[ProductPlacementConfig] = None,
         shadow_config: Optional[ShadowConfig] = None,
         custom_feedback: Optional[str] = None,
@@ -534,6 +627,7 @@ class CompositeService:
         return await cls.composite_product(
             db=db,
             background_id=old_record.background_id,
+            product_image_url=product_image_url,
             placement_config=placement,
             shadow_config=shadow,
             force_regenerate=True,

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, Key, Building2, User, ArrowRight, Lock } from 'lucide-react';
+import { Building2, ArrowRight, Lock } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 
 export const LoginView: React.FC = () => {

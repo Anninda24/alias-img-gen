@@ -8,11 +8,8 @@ import {
   XCircle,
   CheckCircle2,
   RefreshCw,
-  Sliders,
   Sparkles,
   Info,
-  Maximize2,
-  Sun,
   Eye,
 } from 'lucide-react';
 import {
@@ -40,19 +37,18 @@ export function CompositePreviewPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compositeData, setCompositeData] = useState<CompositeResponse | null>(initialComposite || null);
+  const [prevInitial, setPrevInitial] = useState(initialComposite);
 
-  React.useEffect(() => {
-    if (initialComposite !== undefined) {
-      setCompositeData(initialComposite);
-    }
-  }, [initialComposite]);
+  if (initialComposite !== prevInitial) {
+    setPrevInitial(initialComposite);
+    setCompositeData(initialComposite || null);
+  }
 
   // Placement & Shadow controls
   const [scale, setScale] = useState<number>(0.90);
   const [alignment, setAlignment] = useState<'center' | 'bottom' | 'left' | 'right'>('center');
   const [shadowEnabled, setShadowEnabled] = useState<boolean>(true);
-  const [shadowOpacity, setShadowOpacity] = useState<number>(0.35);
-  const [forceRegenerate, setForceRegenerate] = useState<boolean>(false);
+  const shadowOpacity = 0.35;
   const [isRecompositing, setIsRecompositing] = useState<boolean>(false);
   const [customFeedback, setCustomFeedback] = useState<string>('');
 
@@ -67,6 +63,7 @@ export function CompositePreviewPanel({
 
     const res = await generateComposite({
       background_id: backgroundId,
+      product_image_url: productAssetUrl,
       placement: {
         scale,
         alignment,
@@ -75,7 +72,7 @@ export function CompositePreviewPanel({
         enabled: shadowEnabled,
         opacity: shadowOpacity,
       },
-      force_regenerate: forceRegenerate,
+      force_regenerate: true,
     });
 
     if (res.error) {
@@ -97,6 +94,7 @@ export function CompositePreviewPanel({
     setError(null);
 
     const res = await regenerateComposite(compositeData.id, {
+      product_image_url: productAssetUrl,
       placement: {
         scale,
         alignment,
@@ -240,7 +238,7 @@ export function CompositePreviewPanel({
           <label className="text-slate-300 font-medium block">Safe Slot Alignment</label>
           <select
             value={alignment}
-            onChange={(e) => setAlignment(e.target.value as any)}
+            onChange={(e) => setAlignment(e.target.value as 'center' | 'bottom' | 'left' | 'right')}
             className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-200 focus:outline-none focus:border-violet-500 font-mono text-xs"
           >
             <option value="center">Center</option>
@@ -441,9 +439,20 @@ export function CompositePreviewPanel({
 
                 <button
                   type="button"
+                  disabled={loading || !backgroundId}
+                  onClick={handleGenerate}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 shrink-0 shadow-md shadow-indigo-600/20 cursor-pointer"
+                  title="Force a fresh composite using the active product cutout"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? 'Compositing...' : '⚡ Fresh Composite'}
+                </button>
+
+                <button
+                  type="button"
                   disabled={isRecompositing}
                   onClick={handleRecomposite}
-                  className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 shrink-0"
+                  className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 shrink-0 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRecompositing ? 'animate-spin' : ''}`} />
                   {isRecompositing ? 'Recompositing...' : 'Recomposite'}

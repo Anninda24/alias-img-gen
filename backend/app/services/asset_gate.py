@@ -1,5 +1,6 @@
 import io
 import mimetypes
+from pathlib import Path
 import httpx
 from typing import Optional, Dict, Any, Tuple
 from PIL import Image
@@ -346,6 +347,20 @@ class AssetGateService:
         current_url = url
         redirect_count = 0
         CHUNK_SIZE = 64 * 1024  # 64 KB chunks
+
+        # When running in local development or test suites, resolve internal /storage/ demo URLs directly
+        if allow_local_demo and "/storage/" in current_url:
+            try:
+                from app.providers.storage_provider import get_storage_provider
+                storage = get_storage_provider()
+                storage_key = current_url.split("/storage/", 1)[-1].split("?")[0].strip("/")
+                if await storage.exists(storage_key):
+                    data = await storage.get_bytes(storage_key)
+                    ext = Path(storage_key).suffix.lower()
+                    mime = "image/png" if ext == ".png" else ("image/jpeg" if ext in (".jpg", ".jpeg") else "application/octet-stream")
+                    return (data, current_url, mime), None
+            except Exception as e:
+                logger.warning(f"Direct storage resolution for local demo URL '{current_url}' failed: {e}")
 
         async with httpx.AsyncClient(timeout=MAX_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=False) as client:
             while redirect_count <= MAX_REDIRECTS:

@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from PIL import Image, ImageDraw
 
 from app.core.logging import logger
+from app.core.config import settings
 from app.models.brief import AdBrief
 from app.models.asset import AssetValidationRecord
 from app.models.strategy import CreativeStrategyRecord
@@ -73,9 +74,19 @@ class FinalAdService:
         price_badge_dict: Dict[str, Any],
         readability_dict: Dict[str, Any],
         font_hashes: Dict[str, str],
+        tenant_id: str,
         logo_dict: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """
+        Computes a deterministic SHA-256 cache key strictly isolated by tenant.
+        Rejects missing, empty, or whitespace-only tenant_id.
+        """
+        if not tenant_id or not str(tenant_id).strip():
+            raise ValueError(f"tenant_id is required and cannot be empty (got {tenant_id!r})")
+        clean_tenant = str(tenant_id).strip()
+
         parts = [
+            f"tenant:{clean_tenant}",
             composite_output_hash,
             copy_hash,
             platform,
@@ -198,6 +209,11 @@ class FinalAdService:
             )
 
         # Enforce multi-tenant graph consistency
+        if not job.tenant_id or not str(job.tenant_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CreativeJob missing tenant_id. Tenant identity is strictly mandatory for final ad rendering.",
+            )
         if (
             (job.tenant_id and composite.tenant_id and job.tenant_id != composite.tenant_id)
             or (strategy.tenant_id and composite.tenant_id and strategy.tenant_id != composite.tenant_id)
@@ -247,9 +263,12 @@ class FinalAdService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Logo asset '{logo_url}' has not passed Asset Gate. Final rendering aborted.",
                 )
-            logo_bytes = await storage.get_bytes(logo_asset.storage_key)
+            if logo_asset.storage_key:
+                logo_bytes = await storage.get_bytes(logo_asset.storage_key)
+            else:
+                logo_bytes = None
             report_hash = (logo_asset.validation_report or {}).get("sha256") if logo_asset.validation_report else None
-            logo_hash = report_hash or hashlib.sha256(logo_bytes).hexdigest()
+            logo_hash = report_hash or (hashlib.sha256(logo_bytes).hexdigest() if logo_bytes else hashlib.sha256(brand_name.upper().strip().encode("utf-8")).hexdigest())
             logo_asset_id = logo_asset.id
             logo_val_status = logo_asset.validation_status
         else:
@@ -290,21 +309,29 @@ class FinalAdService:
             readability_dict=read_cfg.model_dump(),
             font_hashes=font_hashes,
             logo_dict=logo_cache_meta,
+            tenant_id=job.tenant_id,
         )
 
         if not force_regenerate:
             stmt_cache = select(FinalRenderedCreativeRecord).where(
                 and_(
                     FinalRenderedCreativeRecord.cache_key == cache_key,
+                    FinalRenderedCreativeRecord.tenant_id == job.tenant_id,
                     FinalRenderedCreativeRecord.qa_status.in_([QAStatus.PASS.value, QAStatus.WARNING.value]),
                 )
             ).order_by(desc(FinalRenderedCreativeRecord.created_at))
             cached_res = await db.execute(stmt_cache)
             cached_record = cached_res.scalars().first()
             if cached_record:
-                logger.info(f"Returning cached final ad creative for composite {composite_id}")
-                cached_record.is_cached = True
-                return cached_record
+                if cached_record.tenant_id != job.tenant_id:
+                    logger.error(
+                        f"CRITICAL TENANT ISOLATION BREACH: cache hit for tenant {job.tenant_id} "
+                        f"returned artifact owned by {cached_record.tenant_id}. Rejecting cache."
+                    )
+                else:
+                    logger.info(f"Returning cached final ad creative for composite {composite_id} (tenant {job.tenant_id})")
+                    cached_record.is_cached = True
+                    return cached_record
 
         # =============================================================
         # 4. Job State: FINAL_RENDERING
@@ -513,38 +540,6 @@ class FinalAdService:
         final_png_bytes = out_buf.getvalue()
         output_hash = hashlib.sha256(final_png_bytes).hexdigest()
 
-        # =============================================================
-        # Level 4 — Final Visual Verification (Hybrid Architecture)
-        # Cost control: ONLY runs after final render, NEVER after intermediate stages.
-        # Disabled by default (ENABLE_VISION_QA=False). Advisory only.
-        # =============================================================
-        from app.services.vision_verification_service import (
-            get_vision_verification_service,
-            build_expected_values_payload,
-        )
-        vision_svc = get_vision_verification_service()
-        vision_expected = build_expected_values_payload(
-            platform=composite.platform,
-            aspect_ratio=platform_spec.aspect_ratio,
-            width=w,
-            height=h,
-            headline=approved_headline,
-            subheadline=approved_subheadline,
-            cta=approved_cta,
-            offer_text=approved_offer,
-            brand_primary_color=brief.payload.get("brand", {}).get("colors", {}).get("primary") if brief.payload else None,
-            logo_url=brief.payload.get("brand", {}).get("logo_url") if brief.payload else None,
-        )
-        vision_result = await vision_svc.verify_final_ad(
-            image_bytes=final_png_bytes,
-            expected_values=vision_expected,
-            pipeline_call_count=0,  # Fresh pipeline: first and only call
-        )
-        vision_qa_status_val = vision_result.status.value if vision_result else None
-        vision_qa_result_val = vision_result.model_dump(mode="json") if vision_result else None
-        if vision_result:
-            qa_result.diagnostics["vision_advisory"] = vision_qa_result_val
-
         # Count prior attempts
         stmt_count = select(func.count(FinalRenderedCreativeRecord.id)).where(
             and_(
@@ -573,7 +568,53 @@ class FinalAdService:
             renderer_version=RENDERER_VERSION,
         )
 
+        from app.schemas.vision_verification import VisionQAStatus
+
         if qa_result.status in (QAStatus.PASS, QAStatus.WARNING):
+            # =============================================================
+            # Level 4 — Final Visual Verification (Hybrid Architecture)
+            # Cost control: ONLY runs after deterministic QA PASSES!
+            # Never runs if deterministic QA failed.
+            # Scoped per artifact attempt to prevent cross-job / cross-attempt quota leaks.
+            # =============================================================
+            from app.services.vision_verification_service import (
+                get_vision_verification_service,
+                build_expected_values_payload,
+                VisionVerificationService,
+            )
+            vision_svc = get_vision_verification_service()
+            vision_expected = build_expected_values_payload(
+                platform=composite.platform,
+                aspect_ratio=platform_spec.aspect_ratio,
+                width=w,
+                height=h,
+                headline=approved_headline,
+                subheadline=approved_subheadline,
+                cta=approved_cta,
+                offer_text=approved_offer,
+                brand_primary_color=(
+                    brief.payload.get("brand", {}).get("colors", [None])[0]
+                    if brief and brief.payload and isinstance(brief.payload.get("brand"), dict) and isinstance(brief.payload.get("brand", {}).get("colors"), list) and brief.payload.get("brand", {}).get("colors")
+                    else (brief.payload.get("brand", {}).get("colors", {}).get("primary") if brief and brief.payload and isinstance(brief.payload.get("brand"), dict) and isinstance(brief.payload.get("brand", {}).get("colors"), dict) else None)
+                ) if brief and brief.payload else None,
+                logo_url=brief.payload.get("brand", {}).get("logo_url") if brief and brief.payload and isinstance(brief.payload.get("brand"), dict) else None,
+            )
+            artifact_key = f"{job.id}:{composite.platform}:{attempt_number}"
+            vision_result = await vision_svc.verify_final_ad(
+                image_bytes=final_png_bytes,
+                expected_values=vision_expected,
+                artifact_key=artifact_key,
+                output_hash=output_hash,
+            )
+            vision_qa_status_enum = VisionVerificationService.compute_vision_qa_status(
+                vision_result,
+                is_enabled=settings.ENABLE_VISION_QA,
+            )
+            vision_qa_status_val = vision_qa_status_enum.value
+            vision_qa_result_val = vision_result.model_dump(mode="json") if vision_result else None
+            if vision_result:
+                qa_result.diagnostics["vision_advisory"] = vision_qa_result_val
+
             stage_title = "Final Advertisement Approved" if qa_result.status == QAStatus.PASS else "Final Advertisement Approved (Warnings)"
             if JobStatus(job.status) == JobStatus.FINAL_QA:
                 job.transition_to(
@@ -585,12 +626,29 @@ class FinalAdService:
                         "qa_score": qa_result.overall_score,
                         "storage_key": storage_key,
                         "output_hash": output_hash,
+                        "vision_qa_status": vision_qa_status_val,
                     },
                 )
 
             script_analysis = TypographyEngine.detect_script_support(f"{approved_headline} {approved_subheadline}")
             typo_spec_dict = typo_cfg.model_dump()
             typo_spec_dict["script_analysis"] = script_analysis
+
+            # Idempotency safeguard: re-check if concurrent worker already committed for this cache_key
+            if not force_regenerate:
+                stmt_existing = select(FinalRenderedCreativeRecord).where(
+                    and_(
+                        FinalRenderedCreativeRecord.cache_key == cache_key,
+                        FinalRenderedCreativeRecord.tenant_id == job.tenant_id,
+                        FinalRenderedCreativeRecord.qa_status.in_([QAStatus.PASS.value, QAStatus.WARNING.value]),
+                        FinalRenderedCreativeRecord.is_stale == False,
+                    )
+                ).order_by(desc(FinalRenderedCreativeRecord.created_at))
+                existing_rec = (await db.execute(stmt_existing)).scalars().first()
+                if existing_rec and existing_rec.tenant_id == job.tenant_id:
+                    logger.info(f"Concurrent race averted: reusing already committed final ad {existing_rec.id} (tenant {job.tenant_id})")
+                    existing_rec.is_cached = True
+                    return existing_rec
 
             record = FinalRenderedCreativeRecord(
                 tenant_id=job.tenant_id,
@@ -634,7 +692,7 @@ class FinalAdService:
             return record
 
         else:
-            # QA Rejected
+            # Deterministic QA Rejected: Vision QA omitted to protect token budget
             if JobStatus(job.status) != JobStatus.FAILED:
                 job.transition_to(
                     JobStatus.FAILED,
@@ -674,7 +732,7 @@ class FinalAdService:
                 cache_key=None,  # Never cache failed renders!
                 is_cached=False,
                 attempt_number=attempt_number,
-                vision_qa_status=None,  # Vision QA not run on FAIL deterministic
+                vision_qa_status=VisionQAStatus.NOT_RUN.value,
                 vision_qa_result=None,
                 is_stale=False,
             )
@@ -682,3 +740,53 @@ class FinalAdService:
             await db.commit()
             await db.refresh(failed_record)
             return failed_record
+
+    @staticmethod
+    def evaluate_approval(
+        record: FinalRenderedCreativeRecord,
+        is_vision_enabled: Optional[bool] = None,
+    ) -> Tuple[bool, str]:
+        """
+        Authoritative gate check for creative approval.
+
+        CASE A — Vision QA disabled (ENABLE_VISION_QA=False):
+            Deterministic QA PASS + not stale = approval may proceed.
+            Vision QA is optional (NOT_RUN / Deterministic QA Only).
+
+        CASE B — Vision QA enabled (ENABLE_VISION_QA=True):
+            Deterministic Final QA PASS + not stale.
+            Vision QA must have executed with REAL_VERIFIED (or MOCK_VERIFIED in dev mode).
+            Blocked if UNAVAILABLE, FAILED, or NOT_RUN.
+
+        CASE C — Vision provider unavailable:
+            Approval blocked (explicit UNAVAILABLE state).
+
+        CASE D — Vision QA FAILED:
+            Approval blocked.
+
+        CASE E — Stale or Deterministic QA failed:
+            Approval strictly blocked.
+        """
+        from app.core.config import settings
+        from app.schemas.vision_verification import VisionQAStatus
+
+        if record.is_stale:
+            return False, "Cannot approve stale creative. Upstream inputs have changed, re-rendering required."
+
+        if record.qa_status not in (QAStatus.PASS.value, QAStatus.WARNING.value):
+            return False, f"Deterministic QA failed ({record.qa_status}). Approval blocked."
+
+        vision_enabled = settings.ENABLE_VISION_QA if is_vision_enabled is None else is_vision_enabled
+        if vision_enabled:
+            status_val = record.vision_qa_status
+            if status_val == VisionQAStatus.FAILED.value:
+                return False, "Visual verification failed. Blocking defects or hallucinations detected."
+            if status_val == VisionQAStatus.UNAVAILABLE.value:
+                return False, "Vision QA is enabled and required, but provider was unavailable. Approval blocked."
+            if status_val in (VisionQAStatus.NOT_RUN.value, None):
+                return False, "Vision QA is enabled but has not executed. Visual verification is required before approval."
+            if status_val not in (VisionQAStatus.REAL_VERIFIED.value, VisionQAStatus.MOCK_VERIFIED.value):
+                return False, f"Unrecognized vision QA status '{status_val}'. Approval blocked."
+
+        return True, "Creative approved"
+

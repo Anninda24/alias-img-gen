@@ -4,22 +4,19 @@ import React, { useState } from 'react';
 import {
   ChevronUp,
   ChevronDown,
-  Code2,
   Cpu,
   CheckCircle2,
   AlertTriangle,
   XCircle,
   History,
-  ShieldCheck,
   Copy,
   Check,
-  ExternalLink,
 } from 'lucide-react';
-import { DiagnosticCheck, FinalAdProvenance } from '../../lib/types';
+import { DiagnosticCheck, FinalAdProvenance, VisionQAResultSpec } from '../../lib/types';
 
 interface TechnicalDrawerProps {
   stageName: string;
-  structuredJson?: Record<string, any> | null;
+  structuredJson?: unknown;
   generationDetails?: {
     prompt?: string;
     negative_prompt?: string;
@@ -35,9 +32,9 @@ interface TechnicalDrawerProps {
     checks?: DiagnosticCheck[];
     issues?: string[];
     warnings?: string[];
-    visionAdvisory?: Record<string, any>;
+    visionAdvisory?: VisionQAResultSpec | Record<string, unknown>;
   } | null;
-  provenance?: FinalAdProvenance | Record<string, any> | null;
+  provenance?: FinalAdProvenance | Record<string, unknown> | null;
   versionHistory?: {
     currentAttempt: number;
     isCached: boolean;

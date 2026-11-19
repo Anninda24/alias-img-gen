@@ -8,17 +8,13 @@ import {
   XCircle,
   CheckCircle2,
   RefreshCw,
-  Sliders,
   Image as ImageIcon,
   Zap,
-  Layers,
-  Database,
   Info,
 } from 'lucide-react';
 import {
   TargetPlatform,
   BackgroundResponse,
-  BackgroundQAResult,
   DiagnosticCheck,
 } from '../../lib/types';
 import { generateBackground, regenerateBackground, API_BASE_URL } from '../../lib/api';
@@ -34,7 +30,6 @@ interface BackgroundPreviewPanelProps {
 
 export function BackgroundPreviewPanel({
   strategyId,
-  templateId,
   onBackgroundGenerated,
   initialBackground,
   platform: platformProp,
@@ -42,20 +37,22 @@ export function BackgroundPreviewPanel({
   const [localPlatform, setLocalPlatform] = useState<TargetPlatform>(platformProp || 'instagram');
   const platform = platformProp || localPlatform;
   const setPlatform = (p: TargetPlatform) => setLocalPlatform(p);
-  const [forceRegenerate, setForceRegenerate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backgroundData, setBackgroundData] = useState<BackgroundResponse | null>(initialBackground || null);
+  const [prevInitial, setPrevInitial] = useState(initialBackground);
+  const [prevPlatformProp, setPrevPlatformProp] = useState(platformProp);
+  const forceRegenerate = false;
 
-  React.useEffect(() => {
-    if (initialBackground !== undefined) {
-      setBackgroundData(initialBackground);
-    }
-  }, [initialBackground]);
+  if (initialBackground !== prevInitial) {
+    setPrevInitial(initialBackground);
+    setBackgroundData(initialBackground || null);
+  }
 
-  React.useEffect(() => {
-    if (platformProp) setLocalPlatform(platformProp);
-  }, [platformProp]);
+  if (platformProp && platformProp !== prevPlatformProp) {
+    setPrevPlatformProp(platformProp);
+    setLocalPlatform(platformProp);
+  }
 
   // Regeneration states
   const [customFeedback, setCustomFeedback] = useState('');
@@ -232,12 +229,12 @@ export function BackgroundPreviewPanel({
 
       {/* Control Actions & Strategy Requirement Notice */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           <button
             type="button"
             disabled={loading || !strategyId}
             onClick={handleGenerate}
-            className={`px-5 py-2.5 rounded-lg font-semibold text-xs transition-all flex items-center gap-2 shadow-lg ${
+            className={`px-5 py-2.5 rounded-lg font-semibold text-xs transition-all flex items-center gap-2 shadow-lg cursor-pointer ${
               loading || !strategyId
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 active:scale-95'
@@ -248,6 +245,11 @@ export function BackgroundPreviewPanel({
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 Synthesizing Background...
               </>
+            ) : backgroundData ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5" />
+                Regenerate Background ({platform.toUpperCase()})
+              </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
@@ -255,16 +257,6 @@ export function BackgroundPreviewPanel({
               </>
             )}
           </button>
-
-          <label className="flex items-center space-x-2 text-xs text-slate-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={forceRegenerate}
-              onChange={(e) => setForceRegenerate(e.target.checked)}
-              className="rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-0 w-3.5 h-3.5"
-            />
-            <span>Bypass Cache (Force Fresh)</span>
-          </label>
         </div>
 
         {!strategyId && (
@@ -330,7 +322,7 @@ export function BackgroundPreviewPanel({
                 <span className="text-indigo-400">{backgroundData.prompt.prompt_version}</span>
               </div>
               <p className="text-slate-300 text-[11px] line-clamp-2 italic">
-                "{backgroundData.prompt.positive_prompt}"
+                &quot;{backgroundData.prompt.positive_prompt}&quot;
               </p>
             </div>
           </div>

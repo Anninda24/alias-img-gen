@@ -72,6 +72,7 @@ def test_cache_key_determinism_identical_inputs():
         height=1350,
         generation_params={"seed": 42, "steps": 30, "guidance_scale": 7.5},
         prompt_hash="prompt_hash_123",
+        tenant_id="tenant-test",
     )
     key2 = BackgroundService._compute_cache_key(
         strategy_id="strat-1",
@@ -85,6 +86,7 @@ def test_cache_key_determinism_identical_inputs():
         height=1350,
         generation_params={"seed": 42, "steps": 30, "guidance_scale": 7.5},
         prompt_hash="prompt_hash_123",
+        tenant_id="tenant-test",
     )
     assert key1 == key2
     assert len(key1) == 64  # SHA-256 hex digest
@@ -103,6 +105,7 @@ def test_cache_key_changes_on_generation_param_change():
         width=1080,
         height=1350,
         prompt_hash="prompt_hash_123",
+        tenant_id="tenant-test",
     )
 
     base_key = BackgroundService._compute_cache_key(
@@ -155,6 +158,7 @@ def test_cache_key_dict_key_ordering_invariance():
         width=1080,
         height=1350,
         generation_params=dict_a,
+        tenant_id="tenant-test",
     )
     key_b = BackgroundService._compute_cache_key(
         strategy_id="strat-1",
@@ -167,6 +171,7 @@ def test_cache_key_dict_key_ordering_invariance():
         width=1080,
         height=1350,
         generation_params=dict_b,
+        tenant_id="tenant-test",
     )
     assert key_a == key_b
 
@@ -188,6 +193,7 @@ def test_cache_key_ignores_irrelevant_metadata():
         width=1080,
         height=1350,
         generation_params=params_clean,
+        tenant_id="tenant-test",
     )
     key_meta1 = BackgroundService._compute_cache_key(
         strategy_id="strat-1",
@@ -200,6 +206,7 @@ def test_cache_key_ignores_irrelevant_metadata():
         width=1080,
         height=1350,
         generation_params=params_with_meta1,
+        tenant_id="tenant-test",
     )
     key_meta2 = BackgroundService._compute_cache_key(
         strategy_id="strat-1",
@@ -212,6 +219,7 @@ def test_cache_key_ignores_irrelevant_metadata():
         width=1080,
         height=1350,
         generation_params=params_with_meta2,
+        tenant_id="tenant-test",
     )
 
     assert key_clean == key_meta1

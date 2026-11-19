@@ -223,6 +223,7 @@ async def _run_stage(
                 FinalRenderedCreativeRecord.composite_id == composite_id,
                 FinalRenderedCreativeRecord.platform == platform_enum.value,
                 FinalRenderedCreativeRecord.qa_status.in_(["FINAL_AD_APPROVED", "PASS", "WARNING"]),
+                FinalRenderedCreativeRecord.is_stale == False,
             )
             .order_by(desc(FinalRenderedCreativeRecord.created_at))
         )

@@ -6,9 +6,7 @@ import {
   AlertTriangle,
   XCircle,
   ShieldAlert,
-  ShieldCheck,
   Eye,
-  Maximize2,
   FileCheck,
   Layers,
 } from 'lucide-react';
@@ -81,7 +79,9 @@ export const ValidationFeedbackPanel: React.FC<ValidationFeedbackPanelProps> = (
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center space-x-2">
               <FileCheck className="h-4 w-4 text-indigo-400" />
-              <h3 className="text-sm font-semibold text-white">Payload Gate Evaluation</h3>
+              <h3 className="text-sm font-semibold text-white">
+                {briefReport.gate_name ? `${briefReport.gate_name} Evaluation` : 'Payload Gate Evaluation'}
+              </h3>
             </div>
             {renderStatusBadge(briefReport.status)}
           </div>
@@ -159,123 +159,174 @@ export const ValidationFeedbackPanel: React.FC<ValidationFeedbackPanelProps> = (
       )}
 
       {/* 2. Asset Gate Report */}
-      {assetReport && (
-        <div className="rounded-xl bg-slate-900/70 border border-slate-800 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center space-x-2">
-              <Eye className="h-4 w-4 text-indigo-400" />
-              <h3 className="text-sm font-semibold text-white">Asset Gate Inspection</h3>
+      {assetReport && (() => {
+        const assetReportObj: ValidationReport | undefined =
+          assetReport.report ||
+          (assetReport && 'checks' in assetReport
+            ? (assetReport as unknown as ValidationReport)
+            : undefined);
+
+        const assetStatus = assetReport.status || assetReportObj?.status || 'FAIL';
+        const assetSummary =
+          assetReportObj?.summary ||
+          (assetReport as unknown as { detail?: string })?.detail ||
+          'Asset Gate inspection completed.';
+        const assetChecks = assetReportObj?.checks || [];
+        const assetErrors = assetReportObj?.errors || [];
+        const assetWarnings = assetReportObj?.warnings || [];
+
+        return (
+          <div className="rounded-xl bg-slate-900/70 border border-slate-800 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2">
+                <Eye className="h-4 w-4 text-indigo-400" />
+                <h3 className="text-sm font-semibold text-white">Asset Gate Inspection</h3>
+              </div>
+              {renderStatusBadge(assetStatus)}
             </div>
-            {renderStatusBadge(assetReport.status)}
-          </div>
 
-          <p className="text-xs text-slate-300 font-medium">{assetReport.report.summary}</p>
+            {assetSummary && (
+              <p className="text-xs text-slate-300 font-medium">{assetSummary}</p>
+            )}
 
-          {/* Asset Metadata Grid */}
-          {assetReport.asset_metadata && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Resolution</span>
-                <span className="text-xs font-semibold text-white">
-                  {assetReport.asset_metadata.width && assetReport.asset_metadata.height
-                    ? `${assetReport.asset_metadata.width} × ${assetReport.asset_metadata.height}px`
-                    : 'N/A'}
-                </span>
+            {/* Blocking Errors */}
+            {assetErrors.length > 0 && (
+              <div className="p-3.5 rounded-lg bg-rose-950/40 border border-rose-500/30 space-y-2">
+                <div className="flex items-center space-x-1.5 text-xs font-semibold text-rose-400">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>Blocking Validation Errors ({assetErrors.length})</span>
+                </div>
+                <ul className="space-y-1 pl-5 list-disc text-xs text-rose-300/90 font-mono">
+                  {assetErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
               </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Cutout Alpha</span>
-                <span
-                  className={`text-xs font-semibold ${
-                    assetReport.asset_metadata.has_alpha_channel ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
-                >
-                  {assetReport.asset_metadata.has_alpha_channel
-                    ? `${assetReport.asset_metadata.transparency_percent}% transparent`
-                    : 'None (Opaque)'}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">File Format</span>
-                <span className="text-xs font-semibold text-white font-mono">
-                  {assetReport.asset_metadata.detected_mime || 'Unknown'}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Aspect Ratio</span>
-                <span className="text-xs font-semibold text-white">
-                  {assetReport.asset_metadata.aspect_ratio
-                    ? `${assetReport.asset_metadata.aspect_ratio}:1`
-                    : 'N/A'}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">File Size</span>
-                <span className="text-xs font-semibold text-white font-mono">
-                  {assetReport.asset_metadata.file_size_bytes
-                    ? `${(assetReport.asset_metadata.file_size_bytes / 1024).toFixed(1)} KB`
-                    : 'N/A'}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Cutout Bounds</span>
-                <span className="text-xs font-semibold text-slate-300 font-mono text-[11px] truncate block">
-                  {assetReport.asset_metadata.cutout_bbox
-                    ? `[${assetReport.asset_metadata.cutout_bbox.join(', ')}]`
-                    : 'Full canvas'}
-                </span>
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Visual Asset Preview with Checkerboard Transparency Grid */}
-          {assetReport.is_valid && assetReport.asset_metadata?.url && (
-            <div className="space-y-1.5 pt-2">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                Inspected Product Cutout Preview
-              </span>
-              <div
-                className="relative h-48 rounded-xl border border-slate-700/80 flex items-center justify-center overflow-hidden"
-                style={{
-                  backgroundImage:
-                    'linear-gradient(45deg, #1e293b 25%, transparent 25%), linear-gradient(-45deg, #1e293b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1e293b 75%), linear-gradient(-45deg, transparent 75%, #1e293b 75%)',
-                  backgroundSize: '16px 16px',
-                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-                  backgroundColor: '#0f172a',
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={assetReport.asset_metadata.url}
-                  alt="Inspected product"
-                  className="max-h-40 max-w-full object-contain filter drop-shadow-lg"
-                />
+            {/* Non-blocking Warnings */}
+            {assetWarnings.length > 0 && (
+              <div className="p-3.5 rounded-lg bg-amber-950/30 border border-amber-500/30 space-y-2">
+                <div className="flex items-center space-x-1.5 text-xs font-semibold text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>Advisory Recommendations ({assetWarnings.length})</span>
+                </div>
+                <ul className="space-y-1 pl-5 list-disc text-xs text-amber-300/90">
+                  {assetWarnings.map((warn, idx) => (
+                    <li key={idx}>{warn}</li>
+                  ))}
+                </ul>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Asset Checks List */}
-          <div className="space-y-1.5 pt-1">
-            {assetReport.report.checks.map((chk, idx) => (
-              <div
-                key={idx}
-                className="flex items-start justify-between p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/60 text-xs"
-              >
-                <div className="flex items-start space-x-2">
-                  {chk.passed ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <span className="font-medium text-slate-200 block">{chk.message}</span>
-                    <span className="text-[10px] font-mono text-slate-500">{chk.code}</span>
-                  </div>
+            {/* Asset Metadata Grid */}
+            {assetReport.asset_metadata && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">Resolution</span>
+                  <span className="text-xs font-semibold text-white">
+                    {assetReport.asset_metadata.width && assetReport.asset_metadata.height
+                      ? `${assetReport.asset_metadata.width} × ${assetReport.asset_metadata.height}px`
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">Cutout Alpha</span>
+                  <span
+                    className={`text-xs font-semibold ${
+                      assetReport.asset_metadata.has_alpha_channel ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {assetReport.asset_metadata.has_alpha_channel
+                      ? `${assetReport.asset_metadata.transparency_percent}% transparent`
+                      : 'None (Opaque)'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">File Format</span>
+                  <span className="text-xs font-semibold text-white font-mono">
+                    {assetReport.asset_metadata.detected_mime || 'Unknown'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">Aspect Ratio</span>
+                  <span className="text-xs font-semibold text-white">
+                    {assetReport.asset_metadata.aspect_ratio
+                      ? `${assetReport.asset_metadata.aspect_ratio}:1`
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">File Size</span>
+                  <span className="text-xs font-semibold text-white font-mono">
+                    {assetReport.asset_metadata.file_size_bytes
+                      ? `${(assetReport.asset_metadata.file_size_bytes / 1024).toFixed(1)} KB`
+                      : 'N/A'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-[10px] font-mono text-slate-500 uppercase block">Cutout Bounds</span>
+                  <span className="text-xs font-semibold text-slate-300 font-mono text-[11px] truncate block">
+                    {assetReport.asset_metadata.cutout_bbox
+                      ? `[${assetReport.asset_metadata.cutout_bbox.join(', ')}]`
+                      : 'Full canvas'}
+                  </span>
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* Visual Asset Preview with Checkerboard Transparency Grid */}
+            {assetReport.is_valid && assetReport.asset_metadata?.url && (
+              <div className="space-y-1.5 pt-2">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Inspected Product Cutout Preview
+                </span>
+                <div
+                  className="relative h-48 rounded-xl border border-slate-700/80 flex items-center justify-center overflow-hidden"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(45deg, #1e293b 25%, transparent 25%), linear-gradient(-45deg, #1e293b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1e293b 75%), linear-gradient(-45deg, transparent 75%, #1e293b 75%)',
+                    backgroundSize: '16px 16px',
+                    backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+                    backgroundColor: '#0f172a',
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={assetReport.asset_metadata.url}
+                    alt="Inspected product"
+                    className="max-h-40 max-w-full object-contain filter drop-shadow-lg"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Asset Checks List */}
+            {assetChecks.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                {assetChecks.map((chk, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-start justify-between p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/60 text-xs"
+                  >
+                    <div className="flex items-start space-x-2">
+                      {chk.passed ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <span className="font-medium text-slate-200 block">{chk.message}</span>
+                        <span className="text-[10px] font-mono text-slate-500">{chk.code}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

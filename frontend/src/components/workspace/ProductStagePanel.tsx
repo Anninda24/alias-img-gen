@@ -2,17 +2,12 @@
 
 import React from 'react';
 import {
-  ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
-  XCircle,
   ArrowRight,
-  Maximize2,
-  Sparkles,
-  Layers,
   Image as ImageIcon,
 } from 'lucide-react';
 import { SourceBadge } from '../common/SourceBadge';
+import { AssetValidationResponse } from '../../lib/types';
 
 interface ProductStagePanelProps {
   productName: string;
@@ -21,7 +16,7 @@ interface ProductStagePanelProps {
   currency: string;
   sku?: string;
   category?: string;
-  assetReport?: any;
+  assetReport?: AssetValidationResponse | null;
   onProceedToComposite: () => void;
   onReplaceImage?: () => void;
 }

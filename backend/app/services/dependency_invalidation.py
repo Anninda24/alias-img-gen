@@ -1,4 +1,4 @@
-﻿"""
+"""
 Dependency Invalidation Service.
 
 When an authoritative upstream input changes (e.g., product image replaced,
@@ -117,6 +117,35 @@ class DependencyInvalidationService:
             logger.warning(
                 f"[DependencyInvalidation] Marked {count} final ad(s) stale. "
                 f"job_id={job_id} reason={reason}"
+            )
+        await db.commit()
+        return count
+
+    @staticmethod
+    async def invalidate_finals_for_strategy(
+        db: AsyncSession,
+        strategy_id: str,
+        reason: str = "strategy_changed",
+    ) -> int:
+        """
+        Mark all FinalRenderedCreativeRecord rows that reference strategy_id as stale.
+        Used when the approved marketing copy or strategy directions are regenerated.
+        """
+        stmt = (
+            update(FinalRenderedCreativeRecord)
+            .where(FinalRenderedCreativeRecord.strategy_id == strategy_id)
+            .values(
+                is_stale=True,
+                vision_qa_status=None,
+                vision_qa_result=None,
+            )
+        )
+        result = await db.execute(stmt)
+        count = result.rowcount or 0
+        if count > 0:
+            logger.warning(
+                f"[DependencyInvalidation] Marked {count} final ad(s) stale. "
+                f"strategy_id={strategy_id} reason={reason}"
             )
         await db.commit()
         return count

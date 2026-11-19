@@ -1,4 +1,4 @@
-﻿"""
+"""
 Mock Vision QA Provider.
 
 Deterministic structured mock for development and testing.
@@ -29,6 +29,7 @@ class MockVisionQAProvider(VisionQAProvider):
     def __init__(self, override_status: Optional[str] = None, override_issues: Optional[list] = None):
         self.override_status = override_status  # "PASS" | "WARNING" | "FAIL"
         self.override_issues = override_issues or []
+        self.is_mock = True
 
     async def evaluate_creative(
         self,
@@ -78,6 +79,7 @@ class MockVisionQAProvider(VisionQAProvider):
             warnings.append("Minor visual clutter detected — review composition before publishing.")
 
         latency = int((time.monotonic() - start) * 1000)
+        v_id = f"mock-vis-{uuid.uuid4().hex[:12]}"
 
         result = VisionVerificationResult(
             status=status,
@@ -85,14 +87,16 @@ class MockVisionQAProvider(VisionQAProvider):
             issues=issues,
             warnings=warnings,
             summary=(
-                "Mock vision QA: all checks passed deterministically."
+                "Mock vision QA: all checks passed deterministically (development mode)."
                 if all_pass
                 else f"Mock vision QA: status={status_str}, issues={len(issues)}, warnings={len(warnings)}."
             ),
             advisory=True,
             provider="mock",
             model_name="mock-vision-qa-v1",
-            generation_id=str(uuid.uuid4()),
+            is_mock=True,
+            verification_id=v_id,
+            generation_id=v_id,
             input_tokens=0,
             output_tokens=0,
             latency_ms=latency,
@@ -105,3 +109,23 @@ class MockVisionQAProvider(VisionQAProvider):
         )
 
         return result.model_dump(mode="json")
+
+
+class UnavailableVisionQAProvider(VisionQAProvider):
+    """
+    Explicit stub provider for when a real vision provider (Gemini/OpenAI) is configured
+    but cannot run due to missing API keys, network unavailability, or unconfigured credentials.
+    Ensures provider failures never silently fall back to MockVisionQAProvider.
+    """
+
+    def __init__(self, provider_name: str, reason: str = "Provider unconfigured or API key missing"):
+        self.provider_name = provider_name
+        self.reason = reason
+        self.is_mock = False
+
+    async def evaluate_creative(
+        self,
+        image_bytes: bytes,
+        spec: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raise RuntimeError(f"Vision provider '{self.provider_name}' is unavailable: {self.reason}")

@@ -5,8 +5,14 @@ from app.models.asset import AssetValidationRecord
 from app.models.job import CreativeJob, JobStatus, ALLOWED_TRANSITIONS
 from app.models.strategy import CreativeStrategyRecord
 from app.models.background import GeneratedBackgroundRecord
-from app.models.composite import CompositedCreativeRecord
 from app.models.final_ad import FinalRenderedCreativeRecord
+from app.models.publishing import (
+    PublishingRecord,
+    PublishingStatus,
+    PUBLISHING_ALLOWED_TRANSITIONS,
+    ConnectedAccount,
+    AccountStatus,
+)
 
 __all__ = [
     "TimestampMixin",
@@ -24,4 +30,9 @@ __all__ = [
     "GeneratedBackgroundRecord",
     "CompositedCreativeRecord",
     "FinalRenderedCreativeRecord",
+    "PublishingRecord",
+    "PublishingStatus",
+    "PUBLISHING_ALLOWED_TRANSITIONS",
+    "ConnectedAccount",
+    "AccountStatus",
 ]

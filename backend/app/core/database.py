@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.db_safety import normalize_async_db_url
 
 
 class Base(DeclarativeBase):
@@ -10,11 +11,12 @@ class Base(DeclarativeBase):
 
 
 # Configure async engine with dialect-specific connection pooling
-is_postgres = settings.DATABASE_URL.lower().startswith("postgresql")
+normalized_db_url = normalize_async_db_url(settings.DATABASE_URL)
+is_postgres = normalized_db_url.lower().startswith("postgresql")
 
 if is_postgres:
     engine = create_async_engine(
-        settings.DATABASE_URL,
+        normalized_db_url,
         echo=settings.DEBUG,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
@@ -24,9 +26,9 @@ if is_postgres:
         future=True,
     )
 else:
-    connect_args = {"check_same_thread": False} if settings.DATABASE_URL.lower().startswith("sqlite") else {}
+    connect_args = {"check_same_thread": False} if normalized_db_url.lower().startswith("sqlite") else {}
     engine = create_async_engine(
-        settings.DATABASE_URL,
+        normalized_db_url,
         echo=settings.DEBUG,
         connect_args=connect_args,
         pool_pre_ping=settings.DB_POOL_PRE_PING,

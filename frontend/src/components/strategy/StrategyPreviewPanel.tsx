@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import {
   Sparkles,
   ShieldCheck,
-  ShieldAlert,
   AlertCircle,
   CheckCircle2,
   AlertTriangle,
@@ -14,39 +13,39 @@ import {
   Layout,
   Type,
   Ban,
-  Layers,
   Info,
 } from 'lucide-react';
 import {
   StrategyGenerationResponse,
   ClaimAuditItem,
   CopyPolicyClassification,
+  BriefPayload,
 } from '../../lib/types';
 import { generateStrategy } from '../../lib/api';
 
 interface StrategyPreviewPanelProps {
-  briefPayload: any;
+  briefPayload?: BriefPayload | null;
   briefId?: string;
   onStrategyGenerated?: (response: StrategyGenerationResponse) => void;
   initialStrategy?: StrategyGenerationResponse | null;
 }
 
 export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
-  briefPayload,
   briefId,
   onStrategyGenerated,
   initialStrategy,
 }) => {
   const [loading, setLoading] = useState(false);
   const [strategyResult, setStrategyResult] = useState<StrategyGenerationResponse | null>(initialStrategy || null);
+  const [prevInitial, setPrevInitial] = useState(initialStrategy);
+
+  if (initialStrategy !== prevInitial) {
+    setPrevInitial(initialStrategy);
+    setStrategyResult(initialStrategy || null);
+  }
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'strategy' | 'claims' | 'visuals'>('strategy');
-
-  React.useEffect(() => {
-    if (initialStrategy !== undefined) {
-      setStrategyResult(initialStrategy);
-    }
-  }, [initialStrategy]);
 
   const handleGenerate = async () => {
     if (!briefId) {
@@ -66,8 +65,9 @@ export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
         setStrategyResult(res.data);
         if (onStrategyGenerated) onStrategyGenerated(res.data);
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Generation failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Generation failed';
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
             <div className="mt-0.5">{icon}</div>
             <div>
               <p className="text-xs font-semibold text-white tracking-wide font-mono">
-                "{item.text_segment}"
+                &quot;{item.text_segment}&quot;
               </p>
               {item.reason && (
                 <p className="text-[11px] text-slate-300 mt-0.5">{item.reason}</p>
@@ -316,7 +316,7 @@ export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
                     Creative Concept
                   </span>
                   <span className="text-[11px] font-mono text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded">
-                    Angle: {strategyResult.strategy.concept.angle}
+                    Angle: {strategyResult.strategy.concept.creative_angle || strategyResult.strategy.concept.angle}
                   </span>
                 </div>
 
@@ -324,9 +324,9 @@ export const StrategyPreviewPanel: React.FC<StrategyPreviewPanelProps> = ({
                   <h3 className="text-sm font-semibold text-white">
                     {strategyResult.strategy.concept.name}
                   </h3>
-                  {strategyResult.strategy.concept.notes && (
+                  {(strategyResult.strategy.concept.reasoning_notes || strategyResult.strategy.concept.notes) && (
                     <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                      {strategyResult.strategy.concept.notes}
+                      {strategyResult.strategy.concept.reasoning_notes || strategyResult.strategy.concept.notes}
                     </p>
                   )}
                 </div>

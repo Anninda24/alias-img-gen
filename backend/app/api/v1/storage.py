@@ -63,8 +63,18 @@ async def serve_stored_file(
     if not content_type:
         content_type = "application/octet-stream"
 
+    # Storage Privacy / Cache Security:
+    # Tenant-private assets must NEVER receive public cache headers and must use private/no-store
+    # semantics so stale/superseded creatives are not cached by browsers or intermediate proxies.
+    if target_tenant_id:
+        cache_header = "private, no-cache, no-store, must-revalidate"
+    elif file_path.startswith("demo/"):
+        cache_header = "public, max-age=86400"
+    else:
+        cache_header = "private, no-cache, no-store, must-revalidate"
+
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Cache-Control": "private, max-age=86400, immutable"},
+        headers={"Cache-Control": cache_header},
     )

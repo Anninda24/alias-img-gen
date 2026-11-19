@@ -38,7 +38,7 @@ export interface ValidationCheckItem {
   message: string;
   severity: ValidationSeverity;
   passed: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ValidationReport {
@@ -54,7 +54,7 @@ export interface BriefValidationResponse {
   is_valid: boolean;
   status: ValidationStatus;
   report: ValidationReport;
-  validated_payload?: Record<string, any>;
+  validated_payload?: Record<string, unknown>;
 }
 
 export interface AssetValidationResponse {
@@ -71,7 +71,7 @@ export interface AssetValidationResponse {
     has_alpha_channel?: boolean;
     transparency_percent?: number;
     cutout_bbox?: number[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -79,8 +79,10 @@ export type CopyPolicyClassification = 'FACTUAL' | 'USER_PROVIDED' | 'AI_GENERAT
 
 export interface ConceptSpec {
   name: string;
-  angle: string;
-  notes?: string;
+  creative_angle?: string;
+  angle?: string; // backwards compatibility alias
+  reasoning_notes?: string;
+  notes?: string; // backwards compatibility alias
 }
 
 export interface VisualDirectionSpec {
@@ -133,6 +135,7 @@ export interface StrategyGenerationResponse {
   claim_report: ClaimValidationReport;
   retry_count: number;
   strategy_id?: string;
+  job_id?: string;
   created_at?: string;
 }
 
@@ -153,7 +156,7 @@ export interface DiagnosticCheck {
   score: number;
   severity: 'PASS' | 'WARNING' | 'FAIL';
   details: string;
-  metrics?: Record<string, any>;
+  metrics?: Record<string, unknown>;
 }
 
 export interface BackgroundQAResult {
@@ -225,7 +228,7 @@ export interface CompositeQAResult {
   integrity_check: DiagnosticCheck;
   issues: string[];
   warnings: string[];
-  diagnostics?: Record<string, any>;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface CompositeResponse {
@@ -337,7 +340,61 @@ export interface FinalAdQAResult {
   checks?: DiagnosticCheck[];
   issues: string[];
   warnings: string[];
-  diagnostics?: Record<string, any>;
+  diagnostics?: Record<string, unknown>;
+}
+
+export type VisionQAStatus =
+  | 'NOT_RUN'
+  | 'REAL_VERIFIED'
+  | 'MOCK_VERIFIED'
+  | 'UNAVAILABLE'
+  | 'FAILED';
+
+export interface VisionCheckResult {
+  passed: boolean;
+  severity: 'PASS' | 'WARNING' | 'FAIL';
+  detail?: string | null;
+}
+
+export interface VisionVerificationChecks {
+  text_readable?: VisionCheckResult | boolean;
+  text_no_clipping?: VisionCheckResult | boolean;
+  text_no_unexpected_content?: VisionCheckResult | boolean;
+  product_visible?: VisionCheckResult | boolean;
+  product_placement_reasonable?: VisionCheckResult | boolean;
+  product_no_corruption?: VisionCheckResult | boolean;
+  composition_hierarchy?: VisionCheckResult | boolean;
+  composition_no_clutter?: VisionCheckResult | boolean;
+  branding_colors_present?: VisionCheckResult | boolean;
+  branding_no_unauthorized?: VisionCheckResult | boolean;
+  no_ai_artifacts?: VisionCheckResult | boolean;
+  no_watermarks?: VisionCheckResult | boolean;
+  dimensions?: boolean;
+  composition?: boolean;
+  branding?: boolean;
+  text_readability?: boolean;
+  artifacts?: boolean;
+  [key: string]: unknown;
+}
+
+export interface VisionQAResultSpec {
+  status?: 'PASS' | 'WARNING' | 'FAIL';
+  checks?: VisionVerificationChecks;
+  issues?: string[];
+  warnings?: string[];
+  summary?: string;
+  advisory?: boolean;
+  provider?: string;
+  model_name?: string;
+  model?: string;
+  is_mock?: boolean;
+  verification_id?: string;
+  generation_id?: string;
+  output_hash?: string;
+  final_ad_id?: string;
+  verified_at?: string;
+  timestamp?: string;
+  [key: string]: unknown;
 }
 
 export interface FinalAdResponse {
@@ -362,7 +419,7 @@ export interface FinalAdResponse {
   };
   typography_spec: TypographyStyle;
   cta_spec: CTAStyle;
-  logo_spec?: Record<string, any>;
+  logo_spec?: Record<string, unknown>;
   price_badge_spec?: PriceBadgeStyle;
   readability_spec: ReadabilityEnhancementConfig;
   provenance_chain: FinalAdProvenance;
@@ -370,6 +427,9 @@ export interface FinalAdResponse {
   qa_result: FinalAdQAResult;
   attempt_number: number;
   is_cached: boolean;
+  vision_qa_status?: VisionQAStatus | 'PASS' | 'WARNING' | 'FAIL' | null;
+  vision_qa_result?: VisionQAResultSpec | null;
+  is_stale?: boolean;
   created_at: string;
 }
 
@@ -420,5 +480,198 @@ export interface StageStatusInfo {
   isLocked: boolean;
   dependencies: StageDependencyCheck[];
 }
+
+export type PublishingStatus = 'PUBLISH_QUEUED' | 'PUBLISHING' | 'PUBLISHED' | 'PUBLISH_FAILED';
+
+export interface PublishRequest {
+  final_ad_id: string;
+  platform: string;
+  caption?: string;
+  platform_metadata?: Record<string, unknown>;
+  idempotency_key?: string;
+  account_id?: string;
+}
+
+export interface PublishRetryRequest {
+  reason?: string;
+}
+
+export interface PublishingRecordResponse {
+  id: string;
+  tenant_id: string;
+  final_ad_id: string;
+  platform: string;
+  status: PublishingStatus;
+  provider: string;
+  external_account_id?: string | null;
+  external_post_id?: string | null;
+  post_url?: string | null;
+  caption?: string | null;
+  platform_metadata: Record<string, unknown>;
+  idempotency_key: string;
+  requested_at: string;
+  published_at?: string | null;
+  last_attempt_at?: string | null;
+  attempt_count: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  provenance_chain: Record<string, unknown>;
+}
+
+export interface PublishingReconcileResponse {
+  reconciled: boolean;
+  previous_status: string;
+  current_status: string;
+  external_post_id?: string | null;
+  post_url?: string | null;
+  message: string;
+}
+
+export interface PlatformPublishingCapability {
+  platform: string;
+  display_name: string;
+  supported_media_types: string[];
+  supported_aspect_ratios: string[];
+  max_caption_length: number;
+  supports_hashtags: boolean;
+  max_hashtags?: number | null;
+  supports_links: boolean;
+  provider_type: string;
+  integration_status: 'MOCK' | 'NOT_CONFIGURED' | 'AVAILABLE';
+}
+
+export interface BriefPayload {
+  product?: {
+    name?: string;
+    category?: string;
+    sku?: string;
+    image_url?: string;
+    offer?: {
+      price?: number;
+      original_price?: number;
+      currency?: string;
+      discount_percent?: number;
+      promo_code?: string;
+    };
+    features?: string[];
+  };
+  brand?: {
+    name?: string;
+    logo_url?: string;
+    colors?: string[];
+    font_family?: string;
+  };
+  campaign?: {
+    name?: string;
+    objective?: string;
+    platforms?: string[];
+    target_audience?: string;
+  };
+  approved_claims?: string[];
+  copy?: {
+    headline?: string;
+    subheadline?: string;
+    cta?: string;
+  };
+  images?: Array<{
+    url: string;
+    asset_type?: string;
+    description?: string;
+    require_transparency?: boolean;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface BriefResponse {
+  id: string;
+  brand_name: string;
+  product_name: string;
+  campaign_name: string;
+  price?: number;
+  currency?: string;
+  platforms?: string[];
+  validation_status: string;
+  payload: BriefPayload;
+  validation_report: ValidationReport;
+  created_at?: string | null;
+}
+
+export interface BriefListItem {
+  id: string;
+  tenant_id: string;
+  brand_name: string;
+  product_name: string;
+  campaign_name: string;
+  price?: number;
+  currency?: string;
+  platforms?: string[];
+  validation_status: string;
+  created_at?: string | null;
+}
+
+export interface SaveBriefResponse {
+  id: string;
+  tenant_id: string;
+  validation_status: string;
+  brand_name: string;
+  product_name: string;
+  platforms: string[];
+  brief_report: ValidationReport;
+  asset_report?: ValidationReport | null;
+  asset_result?: AssetValidationResponse | null;
+  created_at?: string | null;
+  detail?: { message?: string; gate_name?: string; report?: ValidationReport } | string;
+}
+
+export interface StrategyRecordResponse {
+  id: string;
+  tenant_id: string;
+  brief_id: string;
+  version_number: number;
+  status: 'APPROVED' | 'REJECTED';
+  template_id: string;
+  strategy_spec: CreativeStrategySpec;
+  claim_validation_report: ClaimValidationReport;
+  retry_count: number;
+  created_at?: string | null;
+}
+
+export interface StrategyValidationResponse {
+  is_valid: boolean;
+  status: string;
+  claim_report: ClaimValidationReport;
+}
+
+export interface FinalAdApprovalResponse {
+  approved: boolean;
+  message: string;
+  final_ad_id: string;
+  job_id: string;
+  qa_status: string;
+  vision_qa_status: string;
+}
+
+export interface JobStatusResponse {
+  id: string;
+  brief_id?: string | null;
+  strategy_id?: string | null;
+  status: string;
+  current_stage: string;
+  progress_pct: number;
+  stage_data?: Record<string, unknown> | null;
+  error_details?: Record<string, unknown> | null;
+  resource_ids: Record<string, string | null>;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface JobDispatchResponse {
+  job_id: string;
+  task_id: string;
+  status: string;
+  stage: string;
+}
+
 
 
